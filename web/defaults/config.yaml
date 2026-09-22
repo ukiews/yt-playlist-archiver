@@ -1,0 +1,37 @@
+configuration:
+  working_directory: /config/working
+
+presets:
+  yt_downloader_video:
+    format: "bestvideo[vcodec^=avc1][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]"
+    output_options:
+      output_directory: "{output_dir}"
+      file_name: "{title_sanitized}.{ext}"
+      download_archive_name: ".ytdl-sub-{subscription_name}-download-archive.json"
+      maintain_download_archive: true
+      sync_with_source: false
+    ytdl_options:
+      break_on_existing: false
+      merge_output_format: mp4
+    video_tags:
+      title: "{title}"
+      artist: "{uploader}"
+
+  yt_downloader_audio:
+    format: "bestaudio[ext=m4a]/bestaudio"
+    output_options:
+      output_directory: "{output_dir}"
+      file_name: "{title_sanitized}.{ext}"
+      download_archive_name: ".ytdl-sub-{subscription_name}-download-archive.json"
+      maintain_download_archive: true
+      sync_with_source: false
+    audio_extract:
+      codec: m4a
+    embed_thumbnail: true
+    music_tags:
+      title: "{title}"
+      artist: "{uploader}"
+      album: "{ %map_get_non_empty(entry_metadata, 'album', 'Unknown Album') }"
+      date: "{upload_date_standardized}"
+    ytdl_options:
+      break_on_existing: false

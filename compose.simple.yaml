@@ -1,0 +1,31 @@
+name: yt-playlist-archiver
+
+services:
+  yt-playlist-archiver:
+    image: ghcr.io/ukiews/yt-playlist-archiver:latest
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      TZ: "${TZ:-Etc/UTC}"
+      YTDL_SUB_CONFIG_DIR: /config
+      DASHBOARD_PASSWORD: "${DASHBOARD_PASSWORD:-admin1234}"
+    ports:
+      - "${DASHBOARD_PORT:-8787}:8787"
+    volumes:
+      - ./config:/config
+      - ./media/videos:/media/videos
+      - ./media/music:/media/music
+
+  ytdl-sub:
+    image: ghcr.io/jmbannon/ytdl-sub:latest
+    restart: unless-stopped
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Etc/UTC}"
+      CRON_SCHEDULE: "*/2 * * * *"
+      CRON_RUN_ON_START: "false"
+    volumes:
+      - ./config:/config
+      - ./media/videos:/media/videos
+      - ./media/music:/media/music

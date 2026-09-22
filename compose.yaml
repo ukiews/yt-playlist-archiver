@@ -1,0 +1,72 @@
+name: ${COMPOSE_PROJECT_NAME:-yt-playlist-archiver}
+
+services:
+  ytdl-sub:
+    image: ghcr.io/jmbannon/ytdl-sub:latest
+    restart: unless-stopped
+    depends_on:
+      yt-playlist-archiver:
+        condition: service_healthy
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Etc/UTC}"
+      CRON_SCHEDULE: "${CRON_SCHEDULE:-*/2 * * * *}"
+      CRON_RUN_ON_START: "${CRON_RUN_ON_START:-false}"
+    volumes:
+      - ${CONFIG_DIR:-./config}:/config
+      - ${VIDEO_DIR:-./media/videos}:/media/videos
+      - ${MUSIC_DIR:-./media/music}:/media/music
+
+  yt-playlist-archiver:
+    image: ghcr.io/ukiews/yt-playlist-archiver:latest
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      TZ: "${TZ:-Etc/UTC}"
+      YTDL_SUB_CONFIG_DIR: /config
+      DASHBOARD_PORT: "8787"
+      DASHBOARD_PASSWORD: "${DASHBOARD_PASSWORD:-admin1234}"
+      FIREFOX_PROFILE_DIR: /firefox-profile
+      FIREFOX_BROWSER_URL: "${FIREFOX_BROWSER_URL:-}"
+      FIREFOX_CONTAINER_NAME: "${FIREFOX_CONTAINER_NAME:-yt-playlist-archiver-firefox}"
+    ports:
+      - "${DASHBOARD_BIND:-0.0.0.0}:${DASHBOARD_PORT:-8787}:8787"
+    volumes:
+      - ${CONFIG_DIR:-./config}:/config
+      - ${VIDEO_DIR:-./media/videos}:/media/videos
+      - ${MUSIC_DIR:-./media/music}:/media/music
+      - ${FIREFOX_CONFIG_DIR:-./firefox}:/firefox-profile:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-0}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/session', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  firefox:
+    profiles:
+      - youtube-auth
+    image: jlesage/firefox:latest
+    container_name: "${FIREFOX_CONTAINER_NAME:-yt-playlist-archiver-firefox}"
+    restart: "no"
+    environment:
+      USER_ID: "${PUID:-1000}"
+      GROUP_ID: "${PGID:-1000}"
+      TZ: "${TZ:-Etc/UTC}"
+      KEEP_APP_RUNNING: "1"
+    ports:
+      - "${FIREFOX_BIND:-0.0.0.0}:${FIREFOX_PORT:-5800}:5800"
+    volumes:
+      - ${FIREFOX_CONFIG_DIR:-./firefox}:/config
+    shm_size: "512m"

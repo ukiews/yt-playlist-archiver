@@ -1,0 +1,93 @@
+#!/bin/bash
+
+set -u
+
+cd /config || exit 1
+
+lock_dir="/config/.yt-playlist-archiver-schedule-lock"
+state_dir="/config/.yt-playlist-archiver-schedule-state"
+paused_file="/config/paused-subscriptions.txt"
+last_error_file="/config/ytdl-sub-last-error.txt"
+
+if [ -e /config/all-subscriptions-paused ]; then
+    printf '%s All subscriptions are paused; skipping this check.\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    exit 0
+fi
+
+if ! mkdir "$lock_dir" 2>/dev/null; then
+    printf '%s Another scheduled ytdl-sub run is still active; skipping this invocation.\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    exit 0
+fi
+trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM
+mkdir -p "$state_dir"
+
+run_if_due() {
+    group_name="$1"
+    interval_minutes="$2"
+    shift 2
+    state_file="$state_dir/$group_name.last-success"
+    now=$(date +%s)
+    interval_seconds=$(( interval_minutes * 60 ))
+    last_success=0
+
+    if [ -r "$state_file" ]; then
+        read -r last_success < "$state_file" || last_success=0
+    fi
+    case "$last_success" in
+        ''|*[!0-9]*) last_success=0 ;;
+    esac
+
+    if (( now - last_success < interval_seconds )); then
+        return 0
+    fi
+
+    active_subscriptions=()
+    for subscription in "$@"; do
+        if [ -r "$paused_file" ] && grep -Fqx "$subscription" "$paused_file"; then
+            printf '%s Skipping paused subscription %s.\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$subscription"
+        else
+            active_subscriptions+=("$subscription")
+        fi
+    done
+
+    if (( ${#active_subscriptions[@]} == 0 )); then
+        return 0
+    fi
+
+    printf '%s Running schedule group %s (%s-minute interval).\n' \
+        "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$group_name" "$interval_minutes"
+
+    if [ "$group_name" = "watch-later" ]; then
+        if ! /config/youtube-auth-check.sh; then
+            printf '%s Watch Later was skipped because YouTube authentication failed.\n' \
+                "$(date '+%Y-%m-%d %H:%M:%S %Z')" >&2
+            return 1
+        fi
+    fi
+
+    if ytdl-sub sub --suppress-colors --log-level verbose --match "${active_subscriptions[@]}"; then
+        printf '%s\n' "$now" > "$state_file"
+        chmod 600 "$state_file"
+        return 0
+    fi
+
+    printf '%s Schedule group %s failed; it will be retried on the next scheduler invocation.\n' \
+        "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$group_name" >&2
+    printf '%s · Schedule group %s failed.\n' "$(date --iso-8601=seconds)" "$group_name" > "$last_error_file"
+    chmod 600 "$last_error_file"
+    return 1
+}
+
+overall_status=0
+
+# The dashboard edits these lines when subscriptions or intervals change.
+run_if_due watch-later 2 || overall_status=1
+run_if_due frequent 10 || overall_status=1
+run_if_due standard 30 || overall_status=1
+run_if_due daily 1440 || overall_status=1
+
+if (( overall_status == 0 )); then
+    rm -f "$last_error_file"
+fi
+
+exit "$overall_status"

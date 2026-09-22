@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f4f5f7">
+  <title>YT Playlist Archiver</title>
+  <link rel="icon" href="/app-icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/app-icon.png">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div id="login" class="login-shell hidden">
+    <form id="login-form" class="login-card">
+      <div class="app-mark" aria-hidden="true"><img src="/app-icon.png" alt=""></div>
+      <h1>YT Playlist Archiver</h1>
+      <p>Sign in to manage your ytdl-sub downloads.</p>
+      <label for="login-password">Dashboard password</label>
+      <input id="login-password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button class="primary wide" type="submit">Sign in</button>
+      <p id="login-error" class="form-error" role="alert"></p>
+    </form>
+  </div>
+
+  <div id="app" class="app-shell hidden">
+    <header class="titlebar">
+      <div class="brand">
+        <div class="app-mark small" aria-hidden="true"><img src="/app-icon.png" alt=""></div>
+        <div><strong>YT Playlist Archiver</strong><span>powered by ytdl-sub</span></div>
+      </div>
+      <div class="system-state">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" title="Switch to dark mode">☾</button>
+        <span id="live-dot" class="state-dot"></span>
+        <span id="system-label">Connecting…</span>
+      </div>
+    </header>
+
+    <nav class="toolbar" aria-label="Dashboard controls">
+      <div class="toolbar-actions">
+        <button id="run-all" class="toolbar-button primary" type="button"><span class="button-symbol">↓</span>Run all</button>
+        <button id="pause-all" class="toolbar-button" type="button">Pause all</button>
+      </div>
+      <div class="toolbar-meta">
+        <div><span>Library</span><strong id="library-total">—</strong></div>
+        <div><span>Next check</span><strong id="next-check">—</strong></div>
+      </div>
+    </nav>
+
+    <div class="page-tabs" role="tablist" aria-label="Dashboard sections">
+      <button class="page-tab active" data-page="activity" role="tab">Activity <span id="activity-badge" class="activity-badge hidden"></span></button>
+      <button class="page-tab" data-page="subscriptions" role="tab">Subscriptions <span id="subscription-count">0</span></button>
+      <button class="page-tab" data-page="configuration" role="tab">Configuration</button>
+    </div>
+
+    <main>
+      <section id="page-subscriptions" class="page">
+        <div class="content-grid">
+          <div class="list-panel">
+            <div class="filterbar">
+              <div class="segmented" role="group" aria-label="Filter subscriptions">
+                <button class="active" data-filter="all">All</button>
+                <button data-filter="video">Video</button>
+                <button data-filter="audio">Audio</button>
+              </div>
+              <label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search"></label>
+              <button id="add-subscription" class="add-button" type="button">+ Add</button>
+            </div>
+            <div class="list-head" aria-hidden="true"><span>Subscription</span><span>Schedule</span><span>Items</span><span>Status</span><span></span></div>
+            <div id="subscription-list" class="subscription-list" aria-live="polite"></div>
+            <div id="empty-state" class="empty-state hidden">No subscriptions match this view.</div>
+          </div>
+
+          <aside id="inspector" class="inspector">
+            <div id="inspector-empty" class="inspector-empty">
+              <div class="empty-glyph">YT</div>
+              <strong>Select a subscription</strong>
+              <span>Review its folder, genre, schedule, and source.</span>
+            </div>
+            <form id="subscription-form" class="hidden">
+              <div class="inspector-title">
+                <div><span id="edit-mode" class="mode-pill"></span><h2 id="edit-title"></h2></div>
+                <button id="close-inspector" class="icon-button" type="button" aria-label="Close">×</button>
+              </div>
+              <input id="edit-id" type="hidden">
+              <label>Source URL<input id="edit-url" type="url" required></label>
+              <label>Destination<input id="edit-output" type="text" required></label>
+              <div id="edit-format" class="format-builder"></div>
+              <div class="form-row">
+                <label>Schedule interval<input id="edit-interval" type="number" min="1" max="1440" required><span class="input-suffix">min</span></label>
+                <label>Album genre<input id="edit-genre" type="text" placeholder="No genre"></label>
+              </div>
+              <p id="schedule-note" class="field-note"></p>
+              <section class="metadata-fields">
+                <h3>Media metadata</h3>
+                <div class="form-row"><label>Title template<input id="edit-tag-title" type="text" placeholder="Use preset"></label><label>Artist template<input id="edit-tag-artist" type="text" placeholder="Use preset"></label></div>
+                <div class="form-row"><label>Album<input id="edit-tag-album" type="text" placeholder="No album override"></label><label>Album artist<input id="edit-tag-album-artist" type="text" placeholder="No override"></label></div>
+                <label>Date template<input id="edit-tag-date" type="text" placeholder="For example {upload_date_standardized}"></label>
+                <label id="edit-artwork-row" class="checkbox-line"><input id="edit-embed-thumbnail" type="checkbox"> Embed thumbnail as album artwork</label>
+              </section>
+              <div class="detail-block"><span>Download archive</span><strong id="edit-archive">—</strong><small id="edit-archive-date"></small></div>
+              <div class="inspector-actions">
+                <button id="run-selected" class="primary" type="button">Run now</button>
+                <button id="pause-selected" type="button">Pause</button>
+                <button type="submit">Save settings</button>
+              </div>
+              <button id="remove-selected" class="remove-button" type="button">Remove subscription</button>
+              <p class="field-note">Removing a subscription keeps its downloaded files and archive.</p>
+              <p class="backup-note">Each save creates a timestamped configuration backup.</p>
+            </form>
+          </aside>
+        </div>
+      </section>
+
+      <section id="page-activity" class="page active">
+        <div class="activity-layout">
+          <div class="status-cards">
+            <article class="status-card"><span>Scheduler</span><strong id="scheduler-status">—</strong><small>Runs each group when its configured interval is due</small></article>
+            <article class="status-card"><span>YouTube sign-in</span><strong id="auth-card-status">—</strong><small id="auth-card-detail">—</small></article>
+            <article class="status-card"><span>Media storage</span><strong id="media-storage">—</strong><small id="media-storage-detail">—</small></article>
+            <article class="status-card"><span>Last error</span><strong id="last-error">—</strong><small id="last-error-detail">—</small></article>
+          </div>
+          <section class="downloads-panel">
+            <div class="panel-header">
+              <div><h2>Downloads Activity</h2><span id="downloads-summary">Loading media history…</span></div>
+              <div class="segmented"><button class="active" data-download-filter="all">All</button><button data-download-filter="video">Video</button><button data-download-filter="audio">Audio</button></div>
+            </div>
+            <div id="downloads-list" class="downloads-list"><div id="live-downloads"></div><div id="recorded-downloads"></div></div>
+          </section>
+          <details class="technical-panel">
+            <summary><span><strong>Technical activity log</strong><small id="log-updated">Waiting for data</small></span><span>Show log</span></summary>
+            <div class="technical-toolbar"><div class="segmented"><button class="active" data-log="scheduled">Scheduled</button><button data-log="manual">Manual</button></div></div>
+            <pre id="activity-log" tabindex="0"></pre>
+          </details>
+        </div>
+      </section>
+
+      <section id="page-configuration" class="page">
+        <div class="config-layout">
+          <aside class="settings-nav" aria-label="Configuration sections">
+            <button class="active" data-settings-page="presets"><strong>Download presets</strong><span>Formats, names, tags</span></button>
+            <button data-settings-page="schedule"><strong>Scheduler</strong><span>Watch intervals</span></button>
+            <button id="check-auth" type="button"><strong>YouTube sign-in</strong><span>Watch Later session</span></button>
+            <button data-settings-page="advanced"><strong>Advanced files</strong><span>YAML and shell editor</span></button>
+          </aside>
+          <div class="settings-content">
+            <form id="preset-form" class="settings-page active" data-settings-panel="presets">
+              <div class="settings-heading"><div><h2>Download presets</h2><p>Defaults applied unless a subscription overrides them.</p></div><button class="primary" type="submit">Save presets</button></div>
+              <section class="settings-card compact-card">
+                <h3>Workspace</h3>
+                <label>Working directory<input id="setting-working-dir" type="text" required></label>
+              </section>
+              <div class="preset-columns">
+                <section class="settings-card">
+                  <div class="card-title"><span class="mode-icon">MP4</span><div><h3>Video preset</h3><p>Quality, container, archive, and tags</p></div></div>
+                  <div id="video-format" class="format-builder"></div>
+                  <div class="form-row"><label>Output container<select id="video-merge-format" required><option value="mp4">MP4</option><option value="mkv">MKV</option><option value="webm">WebM</option></select></label><label>File name template<input id="video-file-name" type="text" required></label></div>
+                  <label>Archive file template<input id="video-archive-name" type="text" required></label>
+                  <div class="form-row"><label>Title tag<input id="video-title-tag" type="text" required></label><label>Artist tag<input id="video-artist-tag" type="text" required></label></div>
+                  <div class="check-grid">
+                    <label><input id="video-maintain-archive" type="checkbox"> Maintain download archive</label>
+                    <label><input id="video-sync-source" type="checkbox"> Delete files removed at source</label>
+                    <label><input id="video-break-existing" type="checkbox"> Stop at first existing item</label>
+                  </div>
+                </section>
+                <section class="settings-card">
+                  <div class="card-title"><span class="mode-icon audio">M4A</span><div><h3>Audio preset</h3><p>Codec, artwork, archive, and tags</p></div></div>
+                  <div id="audio-format" class="format-builder"></div>
+                  <div class="form-row"><label>Audio codec<select id="audio-codec" required><option value="m4a">M4A</option><option value="mp3">MP3</option><option value="opus">Opus</option></select></label><label>File name template<input id="audio-file-name" type="text" required></label></div>
+                  <label>Archive file template<input id="audio-archive-name" type="text" required></label>
+                  <div class="form-row"><label>Title tag<input id="audio-title-tag" type="text" required></label><label>Artist tag<input id="audio-artist-tag" type="text" required></label></div>
+                  <div class="check-grid">
+                    <label><input id="audio-maintain-archive" type="checkbox"> Maintain download archive</label>
+                    <label><input id="audio-embed-thumbnail" type="checkbox"> Embed thumbnail artwork</label>
+                    <label><input id="audio-sync-source" type="checkbox"> Delete files removed at source</label>
+                    <label><input id="audio-break-existing" type="checkbox"> Stop at first existing item</label>
+                  </div>
+                </section>
+              </div>
+              <p class="settings-footnote">Changes are validated and backed up before config.yaml is replaced.</p>
+            </form>
+
+            <form id="schedule-form" class="settings-page" data-settings-panel="schedule">
+              <div class="settings-heading"><div><h2>Scheduler</h2><p>Each group is checked when its interval is due.</p></div><button class="primary" type="submit">Save schedule</button></div>
+              <div id="schedule-cards" class="schedule-cards"></div>
+              <section class="settings-card schedule-info"><h3>Scheduler behavior</h3><p>The scheduler checks which groups are due using the intervals above. The directory lock prevents scheduled and manual checks from overlapping.</p></section>
+            </form>
+
+            <section class="settings-page advanced-settings" data-settings-panel="advanced">
+              <div class="settings-heading"><div><h2>Advanced files</h2><p>Direct editing for settings not yet represented above.</p></div><button id="save-file" class="primary" type="button">Save file</button></div>
+              <div class="advanced-editor-layout">
+                <aside class="file-list" aria-label="Configuration files">
+                  <button class="active" data-file="subscriptions.yaml"><strong>subscriptions.yaml</strong><span>Sources, paths, and tags</span></button>
+                  <button data-file="config.yaml"><strong>config.yaml</strong><span>Download presets</span></button>
+                  <button data-file="cron"><strong>cron</strong><span>Schedule runner</span></button>
+                </aside>
+                <section class="editor-panel">
+                  <div class="panel-header"><div><h2 id="editor-name">subscriptions.yaml</h2><span>Validated before saving · backups retained in .dashboard-backups</span></div></div>
+                  <textarea id="file-editor" spellcheck="false" aria-label="Configuration file editor"></textarea>
+                </section>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <div><span id="footer-status">Checking download history…</span></div>
+      <div><a id="app-version" href="https://github.com/ukiews/yt-playlist-archiver" target="_blank" rel="noopener noreferrer">YT Playlist Archiver</a></div>
+    </footer>
+  </div>
+
+  <dialog id="auth-dialog" class="auth-dialog">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-heading"><div><h2>YouTube sign-in</h2><p>Manage the separate browser session used to access Watch Later.</p></div><button class="icon-button" value="cancel" aria-label="Close">×</button></div>
+      <section class="auth-current"><span class="state-dot" id="auth-dialog-dot"></span><div><strong id="auth-dialog-status">Checking…</strong><small id="auth-dialog-detail"></small></div></section>
+      <p id="auth-explainer" class="auth-explainer">Sign in inside the browser opened below. Signing in to YouTube in the browser showing this dashboard does not update the downloader.</p>
+      <div id="auth-browser-status" class="auth-browser-status" role="status">Checking sign-in browser…</div>
+      <ol class="auth-steps">
+        <li><strong>Start the sign-in browser</strong><span id="auth-start-detail">The dashboard can start Firefox only while you need to refresh the YouTube session.</span><button id="toggle-auth-browser" class="auth-step-action" type="button">Start browser</button></li>
+        <li><strong>Open Firefox and sign in</strong><span>Use the YouTube account that owns Watch Later. You can close this browser again after importing.</span><a id="open-auth-browser" class="auth-step-action" target="_blank" rel="noopener noreferrer">Open browser</a></li>
+        <li><strong id="auth-import-title">Import, test, and stop</strong><span id="auth-import-detail">Return here after signing in. The dashboard imports YouTube cookies and stops Firefox to release its resources.</span><button id="import-firefox-auth" class="auth-step-action primary" type="button">Import and stop</button></li>
+      </ol>
+      <details class="cookie-fallback"><summary>Advanced: use an exported browser session</summary><p>If you already have a YouTube <code>cookies.txt</code> file from another browser, import it here instead of using Firefox. This file grants access to your account; keep it private. <a href="https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp" target="_blank" rel="noopener noreferrer">How to export one</a></p><input id="cookie-upload" type="file" accept=".txt,text/plain" aria-label="Exported YouTube cookies file"><button id="import-cookie-file" type="button">Import and test file</button></details>
+      <div class="dialog-actions"><button id="verify-auth" type="button">Test current Watch Later access</button><button value="cancel">Close</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="add-dialog" class="auth-dialog">
+    <form id="add-form" class="dialog-card">
+      <div class="dialog-heading"><div><h2>Add subscription</h2><p>Choose a schedule group and set the source, destination, and media tags.</p></div><button class="icon-button" type="button" data-close-add aria-label="Close">×</button></div>
+      <div class="form-row"><label>Subscription ID<input id="new-id" type="text" pattern="[a-z][a-z0-9_]{2,49}" placeholder="my_playlist_audio" required></label><label>Type<select id="new-mode"><option value="video">Video</option><option value="audio">Audio</option></select></label></div>
+      <label>YouTube URL<input id="new-url" type="url" placeholder="https://www.youtube.com/playlist?list=…" required></label>
+      <label>Destination folder<input id="new-output" type="text" placeholder="/media/music/My Playlist" required></label>
+      <div class="form-row"><label>Schedule group<select id="new-schedule" required></select></label><label>Genre<input id="new-genre" type="text" placeholder="Optional"></label></div>
+      <label class="checkbox-line"><input id="new-use-auth" type="checkbox"> Use current YouTube sign-in for a private playlist</label>
+      <details class="cookie-fallback"><summary>Media metadata and format</summary>
+        <div id="new-format" class="format-builder"></div>
+        <div class="form-row"><label>Title template<input id="new-tag-title" type="text" placeholder="Use preset"></label><label>Artist template<input id="new-tag-artist" type="text" placeholder="Use preset"></label></div>
+        <div class="form-row"><label>Album<input id="new-tag-album" type="text" placeholder="No override"></label><label>Album artist<input id="new-tag-album-artist" type="text" placeholder="No override"></label></div>
+        <label>Date template<input id="new-tag-date" type="text" placeholder="Use preset"></label>
+        <label class="checkbox-line"><input id="new-embed-thumbnail" type="checkbox" checked> Embed thumbnail as album artwork</label>
+      </details>
+      <div class="dialog-actions"><button type="button" data-close-add>Cancel</button><button class="primary" type="submit">Add subscription</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script src="/format.js" defer></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>
