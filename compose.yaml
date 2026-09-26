@@ -3,7 +3,7 @@ name: ${COMPOSE_PROJECT_NAME:-yt-playlist-archiver}
 services:
   ytdl-sub:
     image: ghcr.io/jmbannon/ytdl-sub:latest
-    restart: unless-stopped
+    restart: always
     depends_on:
       yt-playlist-archiver:
         condition: service_healthy
@@ -20,7 +20,7 @@ services:
 
   yt-playlist-archiver:
     image: ghcr.io/ukiews/yt-playlist-archiver:latest
-    restart: unless-stopped
+    restart: always
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       TZ: "${TZ:-Etc/UTC}"
