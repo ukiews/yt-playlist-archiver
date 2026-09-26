@@ -18,7 +18,7 @@ name: yt-playlist-archiver
 services:
   yt-playlist-archiver:
     image: ghcr.io/ukiews/yt-playlist-archiver:latest
-    restart: unless-stopped
+    restart: always
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       TZ: "${TZ:-Etc/UTC}"
@@ -33,7 +33,7 @@ services:
 
   ytdl-sub:
     image: ghcr.io/jmbannon/ytdl-sub:latest
-    restart: unless-stopped
+    restart: always
     environment:
       PUID: "${PUID:-1000}"
       PGID: "${PGID:-1000}"
