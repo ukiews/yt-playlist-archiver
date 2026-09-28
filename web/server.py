@@ -21,7 +21,7 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import yaml
 
@@ -1390,6 +1390,22 @@ def companion_audio_id(subscription_id: str) -> str:
     return f"{base[:44]}_audio"
 
 
+def youtube_source_key(value: str) -> tuple[str, str]:
+    parsed = urlparse(str(value).strip())
+    query = parse_qs(parsed.query)
+    playlist_id = (query.get("list") or [""])[0]
+    if playlist_id:
+        return "playlist", playlist_id
+    host = (parsed.hostname or "").lower().removeprefix("www.").removeprefix("m.")
+    path = parsed.path.rstrip("/")
+    if host == "youtu.be" and path:
+        return "video", path.lstrip("/")
+    video_id = (query.get("v") or [""])[0]
+    if video_id:
+        return "video", video_id
+    return host, path
+
+
 def companion_audio_payload(payload: dict) -> dict:
     result = {
         "url": payload.get("url"),
@@ -1428,21 +1444,34 @@ def patch_subscription(subscription_id: str, payload: dict) -> None:
         if not str(payload.get("audioOutputDir") or payload.get("outputDir") or "").strip():
             raise ValueError("Choose a destination for the separate audio copy")
         audio_exists = bool(audio_id and audio_id in rows)
+        linking_existing = False
         if not audio_id:
             audio_id = companion_audio_id(subscription_id)
             if audio_id in rows:
-                raise ValueError(
-                    f"Subscription ID {audio_id} already exists. Leave this option off until that subscription is migrated."
-                )
+                existing_audio = rows[audio_id]
+                if existing_audio["mode"] != "audio":
+                    raise ValueError(f"Subscription ID {audio_id} already exists and is not an audio subscription")
+                if youtube_source_key(existing_audio["url"]) != youtube_source_key(payload.get("url", "")):
+                    raise ValueError(
+                        f"Subscription ID {audio_id} already exists but uses a different YouTube source"
+                    )
+                audio_exists = True
+                linking_existing = True
             mapping[subscription_id] = audio_id
+        if linking_existing and rows[audio_id]["scheduleGroup"] != group:
+            old_group = rows[audio_id]["scheduleGroup"]
+            if old_group:
+                cron = change_cron_member(cron, old_group, audio_id, False)
+            cron = change_cron_member(cron, group, audio_id, True)
         if not audio_exists:
             cron = change_cron_member(cron, group, audio_id, True)
         audio_preset = selected_preset(data, "audio")
         audio_item = data.setdefault(audio_preset, {}).setdefault(audio_id, {})
-        apply_subscription_fields(audio_item, "audio", companion_audio_payload(payload))
-        apply_auth(audio_item, payload)
-        if (item.get("ytdl_options") or {}).get("cookiefile"):
-            audio_item.setdefault("ytdl_options", {})["cookiefile"] = item["ytdl_options"]["cookiefile"]
+        if not linking_existing:
+            apply_subscription_fields(audio_item, "audio", companion_audio_payload(payload))
+            apply_auth(audio_item, payload)
+            if (item.get("ytdl_options") or {}).get("cookiefile"):
+                audio_item.setdefault("ytdl_options", {})["cookiefile"] = item["ytdl_options"]["cookiefile"]
     elif audio_id:
         audio_row = rows.get(audio_id)
         if audio_row:

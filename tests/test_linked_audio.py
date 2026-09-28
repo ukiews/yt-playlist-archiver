@@ -136,6 +136,41 @@ class LinkedAudioTests(unittest.TestCase):
         self.assertEqual({row["id"] for row in rows}, {"sample_video", "sample_audio"})
         self.assertFalse(next(row for row in rows if row["id"] == "sample_video")["additionalAudio"])
 
+    def test_enabling_audio_links_compatible_existing_subscription_without_rewriting_it(self):
+        server.create_subscription(self.payload(additionalAudio=False))
+        server.create_subscription(self.payload(
+            id="sample_audio",
+            mode="audio",
+            outputDir="/media/music/Existing",
+            additionalAudio=False,
+            format="bestaudio[ext=m4a]",
+            genre="Existing genre",
+            metadata={"title": "{title}", "artist": "Existing artist"},
+        ))
+        before = yaml.safe_load((self.config / "subscriptions.yaml").read_text())["yt_downloader_audio"]["sample_audio"]
+
+        server.patch_subscription("sample_video", self.payload(additionalAudio=True))
+
+        after = yaml.safe_load((self.config / "subscriptions.yaml").read_text())["yt_downloader_audio"]["sample_audio"]
+        self.assertEqual(after, before)
+        self.assertEqual(server.linked_audio_outputs(), {"sample_video": "sample_audio"})
+        rows = server.logical_subscription_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["audioOutputDir"], "/media/music/Existing")
+
+    def test_enabling_audio_refuses_existing_subscription_with_different_source(self):
+        server.create_subscription(self.payload(additionalAudio=False))
+        server.create_subscription(self.payload(
+            id="sample_audio",
+            mode="audio",
+            url="https://www.youtube.com/playlist?list=another",
+            outputDir="/media/music/Other",
+            additionalAudio=False,
+        ))
+        with self.assertRaisesRegex(ValueError, "different YouTube source"):
+            server.patch_subscription("sample_video", self.payload(additionalAudio=True))
+        self.assertEqual(server.linked_audio_outputs(), {})
+
     def test_activity_groups_linked_outputs_by_youtube_video(self):
         (self.config / "dashboard-settings.json").write_text(json.dumps({
             "linkedAudioOutputs": {"sample_video": "sample_audio"}
