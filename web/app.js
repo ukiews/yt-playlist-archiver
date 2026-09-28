@@ -58,6 +58,10 @@ const fieldHelp = {
   'edit-audio-output': 'Container path for the separate audio files. Moving it does not move files already downloaded.',
   'edit-interval': 'Minutes between checks for this schedule group. Changing it also affects other subscriptions in the same group.',
   'setting-working-dir': 'Temporary processing folder inside the container. Keep it on storage with enough space for a full download.',
+  'video-maintain-archive': 'Remember downloaded YouTube items so they are not downloaded again if their files are moved or deleted.',
+  'video-break-existing': 'End the playlist scan at the first archived item. This is faster but can miss older items inserted farther down.',
+  'audio-maintain-archive': 'Remember downloaded YouTube items so they are not downloaded again if their files are moved or deleted.',
+  'audio-break-existing': 'End the playlist scan at the first archived item. This is faster but can miss older items inserted farther down.',
   'video-sync-source': 'When enabled, files removed from the source playlist may also be removed locally.',
   'audio-sync-source': 'When enabled, files removed from the source playlist may also be removed locally.',
 };
