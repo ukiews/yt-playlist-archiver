@@ -133,6 +133,7 @@ main { min-height: 0; overflow: hidden; }
 .metadata-fields { margin: 3px 0 17px; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: white; }
 .additional-audio-fields { margin: 3px 0 17px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 7px; background: white; }
 .additional-audio-fields .field-note { margin: 5px 0 10px 24px; }
+.additional-audio-fields:has(> label.hidden) .field-note { margin-bottom: 0; }
 .additional-audio-fields > label:last-child { margin-bottom: 0; }
 .metadata-fields h3 { margin: 0 0 12px; font-size: 12px; }
 .inspector .checkbox-line { display: flex; align-items: center; gap: 7px; margin: 2px 0 0; color: var(--text); }
