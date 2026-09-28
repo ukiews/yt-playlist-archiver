@@ -86,16 +86,13 @@
               <label>Source URL<input id="edit-url" type="url" required></label>
               <label>Destination<input id="edit-output" type="text" required></label>
               <div id="edit-format" class="format-builder"></div>
-              <div class="form-row">
-                <label>Schedule interval<input id="edit-interval" type="number" min="1" max="1440" required><span class="input-suffix">min</span></label>
-                <label>Album genre<input id="edit-genre" type="text" placeholder="No genre"></label>
-              </div>
+              <label>Schedule interval<input id="edit-interval" type="number" min="1" max="1440" required><span class="input-suffix">min</span></label>
               <p id="schedule-note" class="field-note"></p>
               <section class="metadata-fields">
                 <h3>Media metadata</h3>
                 <div class="form-row"><label>Title template<input id="edit-tag-title" type="text" placeholder="Use preset"></label><label>Artist template<input id="edit-tag-artist" type="text" placeholder="Use preset"></label></div>
                 <div class="form-row"><label>Album<input id="edit-tag-album" type="text" placeholder="No album override"></label><label>Album artist<input id="edit-tag-album-artist" type="text" placeholder="No override"></label></div>
-                <label>Date template<input id="edit-tag-date" type="text" placeholder="For example {upload_date_standardized}"></label>
+                <div class="form-row"><label>Album genre<input id="edit-genre" type="text" placeholder="No genre"></label><label>Date template<input id="edit-tag-date" type="text" placeholder="For example {upload_date_standardized}"></label></div>
                 <label id="edit-artwork-row" class="checkbox-line"><input id="edit-embed-thumbnail" type="checkbox"> Embed thumbnail as album artwork</label>
               </section>
               <div class="detail-block"><span>Download archive</span><strong id="edit-archive">—</strong><small id="edit-archive-date"></small></div>
@@ -233,13 +230,13 @@
       <div class="form-row"><label>Subscription ID<input id="new-id" type="text" pattern="[a-z][a-z0-9_]{2,49}" placeholder="my_playlist_audio" required></label><label>Type<select id="new-mode"><option value="video">Video</option><option value="audio">Audio</option></select></label></div>
       <label>YouTube URL<input id="new-url" type="url" placeholder="https://www.youtube.com/playlist?list=…" required></label>
       <label>Destination folder<input id="new-output" type="text" placeholder="/media/music/My Playlist" required></label>
-      <div class="form-row"><label>Schedule group<select id="new-schedule" required></select></label><label>Genre<input id="new-genre" type="text" placeholder="Optional"></label></div>
+      <label>Schedule group<select id="new-schedule" required></select></label>
       <label class="checkbox-line"><input id="new-use-auth" type="checkbox"> Use current YouTube sign-in for a private playlist</label>
       <details class="cookie-fallback"><summary>Media metadata and format</summary>
         <div id="new-format" class="format-builder"></div>
         <div class="form-row"><label>Title template<input id="new-tag-title" type="text" placeholder="Use preset"></label><label>Artist template<input id="new-tag-artist" type="text" placeholder="Use preset"></label></div>
         <div class="form-row"><label>Album<input id="new-tag-album" type="text" placeholder="No override"></label><label>Album artist<input id="new-tag-album-artist" type="text" placeholder="No override"></label></div>
-        <label>Date template<input id="new-tag-date" type="text" placeholder="Use preset"></label>
+        <div class="form-row"><label>Album genre<input id="new-genre" type="text" placeholder="No genre"></label><label>Date template<input id="new-tag-date" type="text" placeholder="Use preset"></label></div>
         <label class="checkbox-line"><input id="new-embed-thumbnail" type="checkbox" checked> Embed thumbnail as album artwork</label>
       </details>
       <div class="dialog-actions"><button type="button" data-close-add>Cancel</button><button class="primary" type="submit">Add subscription</button></div>
