@@ -160,7 +160,8 @@ main { min-height: 0; overflow: hidden; }
 .missing-queue-empty { padding: 24px; text-align: center; color: var(--muted); }
 .downloads-panel, .editor-panel { min-height: 310px; display: grid; grid-template-rows: 55px minmax(0,1fr); border: 1px solid var(--line); border-radius: 9px; background: white; overflow: hidden; }
 .downloads-panel { flex: 1 0 310px; }
-.downloads-panel.missing-review-active { opacity: .48; filter: grayscale(.65); }
+.downloads-panel.missing-review-active { min-height: 0; flex: 0 0 auto; grid-template-rows: auto 0; opacity: .48; filter: grayscale(.65); }
+.downloads-panel.missing-review-active .downloads-list { display: none; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid var(--line); background: #fafafa; }
 .panel-header h2 { margin: 0; font-size: 14px; }
 .panel-header span { display: block; color: var(--muted); font-size: 10px; }
