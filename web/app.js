@@ -468,6 +468,7 @@ function renderActivity() {
   const downloadsCollapsed = downloadsPanel.classList.contains('collapsed');
   $('#downloads-toggle-label').textContent = downloadsCollapsed ? 'Show downloads' : 'Hide downloads';
   $('#downloads-toggle-label').setAttribute('aria-expanded', String(!downloadsCollapsed));
+  $('#downloads-toggle-label').setAttribute('aria-label', downloadsCollapsed ? 'Show downloads' : 'Hide downloads');
   $('#scheduler-status').textContent = data.missingQueue
     ? (data.missingQueue.status === 'downloading' ? 'Recovery download' : 'Paused for review')
     : data.job ? data.job.label : (data.allPaused ? 'Paused' : data.scheduleActive ? 'Watching' : 'Unavailable');
@@ -988,11 +989,11 @@ $$('[data-download-filter]').forEach(button => button.addEventListener('click', 
 }));
 function toggleDownloadsPanel() {
   const panel = $('#downloads-panel');
-  if (!panel.classList.contains('missing-review-active')) return;
   panel.classList.toggle('collapsed');
   const collapsed = panel.classList.contains('collapsed');
   $('#downloads-toggle-label').textContent = collapsed ? 'Show downloads' : 'Hide downloads';
   $('#downloads-toggle-label').setAttribute('aria-expanded', String(!collapsed));
+  $('#downloads-toggle-label').setAttribute('aria-label', collapsed ? 'Show downloads' : 'Hide downloads');
 }
 $('#downloads-toggle-label').addEventListener('click', event => {
   event.stopPropagation();

@@ -168,11 +168,10 @@ main { min-height: 0; overflow: hidden; }
 .downloads-panel.collapsed { min-height: 0; flex: 0 0 auto; display: block; }
 .downloads-panel.collapsed .panel-header { min-height: 51px; border-bottom: 0; }
 .downloads-panel.collapsed .downloads-list { display: none; }
-.downloads-panel.missing-review-active .panel-header { cursor: pointer; }
+.downloads-panel .panel-header { cursor: pointer; }
 .downloads-panel-actions { display: flex; align-items: center; gap: 12px; }
-.downloads-toggle-label { display: none !important; padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--blue-dark) !important; box-shadow: none !important; font-size: 11px !important; white-space: nowrap; }
-.downloads-panel.missing-review-active .downloads-toggle-label { display: block !important; }
-.downloads-panel.missing-review-active.collapsed .segmented { display: none; }
+.downloads-toggle-label { display: block !important; padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--blue-dark) !important; box-shadow: none !important; font-size: 11px !important; white-space: nowrap; }
+.downloads-panel.collapsed .segmented { display: none; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid var(--line); background: #fafafa; }
 .panel-header h2 { margin: 0; font-size: 14px; }
 .panel-header span { display: block; color: var(--muted); font-size: 10px; }
@@ -474,6 +473,9 @@ html[data-theme="dark"] .missing-queue-header { background: #1b3043; }
   .panel-header .segmented { flex: none; }
   .downloads-panel-actions { min-width: 0; }
   .panel-header .segmented button { min-width: 62px; padding: 4px 6px; }
+  .downloads-toggle-label { width: 22px; font-size: 0 !important; }
+  .downloads-toggle-label::after { content: '▴'; font-size: 14px; }
+  .downloads-panel.collapsed .downloads-toggle-label::after { content: '▾'; }
   .check-grid, .form-row { grid-template-columns: 1fr; }
   .auth-steps li { padding-right: 0; padding-bottom: 55px; }
   .auth-steps .auth-step-action { left: 48px; right: auto; top: auto; bottom: 10px; width: auto; }
