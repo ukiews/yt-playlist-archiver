@@ -130,7 +130,7 @@ function addStaticHelp() {
 }
 
 function addFormatHelp(host) {
-  addFieldHelp($('[data-format-choice]', host), 'Use the preset, adjust common format options, or enter a custom yt-dlp expression.');
+  addFieldHelp($('[data-format-choice]', host), 'Use the global defaults from Configuration, override common format options, or enter a custom yt-dlp expression.');
 }
 
 function friendlyTime(value) {
@@ -258,7 +258,7 @@ function selectSubscription(id) {
   $('#edit-mode').className = `mode-pill ${row.mode}`;
   $('#edit-url').value = row.url;
   $('#edit-output').value = row.outputDir;
-  FormatBuilder.mount($('#edit-format'), row.mode, row.format === 'Preset default' ? '' : row.format, true);
+  FormatBuilder.mount($('#edit-format'), row.mode, row.format === 'Preset default' ? '' : row.format, true, appState.settings?.[row.mode]?.format || '');
   addFormatHelp($('#edit-format'));
   $('#edit-interval').value = row.intervalMinutes;
   $('#edit-genre').value = row.genre || '';
@@ -616,7 +616,7 @@ $('#add-subscription').addEventListener('click', () => {
     || schedules.find(item => item.id !== 'watch-later')?.id
     || schedules[0].id;
   $('#new-output').value = '/media/videos/';
-  FormatBuilder.mount($('#new-format'), 'video', '', true);
+  FormatBuilder.mount($('#new-format'), 'video', '', true, appState.settings?.video?.format || '');
   addFormatHelp($('#new-format'));
   $('#add-dialog').showModal();
   $('#new-id').focus();
@@ -624,7 +624,8 @@ $('#add-subscription').addEventListener('click', () => {
 $$('[data-close-add]').forEach(button => button.addEventListener('click', () => $('#add-dialog').close()));
 $('#new-mode').addEventListener('change', () => {
   $('#new-output').value = $('#new-mode').value === 'audio' ? '/media/music/' : '/media/videos/';
-  FormatBuilder.mount($('#new-format'), $('#new-mode').value, '', true);
+  const mode = $('#new-mode').value;
+  FormatBuilder.mount($('#new-format'), mode, '', true, appState.settings?.[mode]?.format || '');
   addFormatHelp($('#new-format'));
 });
 $('#add-form').addEventListener('submit', async event => {
@@ -783,7 +784,7 @@ $('#preset-form').addEventListener('submit', async event => {
   };
   try {
     await api('/api/settings/config', {method:'POST', body: JSON.stringify(payload)});
-    toast('Download presets saved and backed up');
+    toast('Global download presets saved and backed up');
     await loadSettings();
   } catch (error) { toast(error.message, 'error'); }
 });

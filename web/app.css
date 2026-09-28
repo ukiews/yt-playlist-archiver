@@ -286,6 +286,8 @@ main { min-height: 0; overflow: hidden; }
 .format-builder .format-check { display: flex; align-items: flex-start; gap: 7px; color: var(--text); }
 .format-check input[type="checkbox"] { flex: none; width: auto; height: auto; margin: 2px 0 0; padding: 0; }
 .format-note { margin: -3px 0 10px; color: var(--muted); font-size: 10px; }
+.format-default-fields { opacity: .58; }
+.format-default-fields select:disabled, .format-default-fields input:disabled { cursor: default; }
 .format-preview { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); overflow-wrap: anywhere; }
 .format-preview code { color: var(--muted); font: 10px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 

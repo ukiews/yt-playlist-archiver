@@ -35,8 +35,11 @@ const FormatBuilder = (() => {
     return `<label>${label}<select data-format-field="${name}">${choices.map(([value, text]) => option(value, text, selected)).join('')}</select></label>`;
   }
 
-  function mount(host, mode, value = '', allowInherit = false) {
-    const parsed = (mode === 'audio' ? parseAudio : parseVideo)(value);
+  function mount(host, mode, value = '', allowInherit = false, inheritedValue = '') {
+    const parser = mode === 'audio' ? parseAudio : parseVideo;
+    const inherited = allowInherit && !value;
+    const displayedValue = inherited ? inheritedValue : value;
+    const parsed = parser(displayedValue);
     const choice = !value && allowInherit ? 'inherit' : parsed ? 'guided' : 'custom';
     const current = parsed || (mode === 'audio' ? {audio: 'm4a', fallback: true} : {codec: 'avc1', height: '1080', audio: 'm4a', fallback: true, container: 'mp4'});
     const fields = mode === 'video' ? `
@@ -48,7 +51,7 @@ const FormatBuilder = (() => {
     host.dataset.formatMode = mode;
     host.innerHTML = `
       <label>Format selection<select data-format-choice>
-        ${allowInherit ? option('inherit', `Use ${mode} preset`, choice) : ''}
+        ${allowInherit ? option('inherit', 'Use Global Defaults', choice) : ''}
         ${option('guided', 'Choose options', choice)}
         ${option('custom', 'Custom yt-dlp format', choice)}
       </select></label>
@@ -57,16 +60,27 @@ const FormatBuilder = (() => {
         <p class="format-note">${mode === 'video' ? 'The resolution limit also applies to the fallback.' : 'The fallback keeps downloads working when the preferred format is unavailable.'}</p>
       </div>
       <label class="format-custom">yt-dlp format expression<input type="text" data-format-raw></label>
-      <div class="format-preview">${allowInherit ? `<span class="format-inherited">Uses ${mode} preset</span>` : ''}<code></code></div>`;
-    host.querySelector('[data-format-raw]').value = value;
+      <div class="format-preview">${allowInherit ? '<span class="format-inherited">Global default</span>' : ''}<code></code></div>`;
+    host.querySelector('[data-format-raw]').value = displayedValue;
     const update = () => {
       const selected = host.querySelector('[data-format-choice]').value;
-      host.querySelector('.format-guided').classList.toggle('hidden', selected !== 'guided');
-      host.querySelector('.format-custom').classList.toggle('hidden', selected !== 'custom');
-      host.querySelector('.format-preview').classList.toggle('hidden', selected === 'inherit');
-      host.querySelector('.format-preview code').textContent = selected === 'custom' ? host.querySelector('[data-format-raw]').value : selected === 'guided' ? readGuided(host) : '';
+      const usesDefaults = selected === 'inherit';
+      const inheritedIsGuided = Boolean(parser(inheritedValue));
+      const showGuided = selected === 'guided' || (usesDefaults && inheritedIsGuided);
+      const showCustom = selected === 'custom' || (usesDefaults && !inheritedIsGuided);
+      const guided = host.querySelector('.format-guided');
+      const custom = host.querySelector('.format-custom');
+      guided.classList.toggle('hidden', !showGuided);
+      custom.classList.toggle('hidden', !showCustom);
+      guided.classList.toggle('format-default-fields', usesDefaults);
+      custom.classList.toggle('format-default-fields', usesDefaults);
+      guided.querySelectorAll('select,input').forEach(field => { field.disabled = usesDefaults; });
+      host.querySelector('[data-format-raw]').disabled = usesDefaults;
+      host.querySelector('.format-preview').classList.toggle('hidden', false);
+      host.querySelector('.format-inherited')?.classList.toggle('hidden', !usesDefaults);
+      host.querySelector('.format-preview code').textContent = usesDefaults ? inheritedValue : selected === 'custom' ? host.querySelector('[data-format-raw]').value : readGuided(host);
       const fallbackContainer = host.querySelector('[data-format-field="container"]');
-      if (fallbackContainer) fallbackContainer.disabled = !host.querySelector('[data-format-fallback]').checked;
+      if (fallbackContainer) fallbackContainer.disabled = usesDefaults || !host.querySelector('[data-format-fallback]').checked;
     };
     host.oninput = update;
     host.onchange = update;

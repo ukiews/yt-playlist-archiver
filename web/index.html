@@ -138,14 +138,14 @@
       <section id="page-configuration" class="page">
         <div class="config-layout">
           <aside class="settings-nav" aria-label="Configuration sections">
-            <button class="active" data-settings-page="presets"><strong>Download presets</strong><span>Formats, names, tags</span></button>
+            <button class="active" data-settings-page="presets"><strong>Global Download Presets</strong><span>Formats, names, tags</span></button>
             <button data-settings-page="schedule"><strong>Scheduler</strong><span>Watch intervals</span></button>
             <button id="check-auth" type="button"><strong>YouTube sign-in</strong><span>Watch Later session</span></button>
             <button data-settings-page="advanced"><strong>Advanced files</strong><span>YAML and shell editor</span></button>
           </aside>
           <div class="settings-content">
             <form id="preset-form" class="settings-page active" data-settings-panel="presets">
-              <div class="settings-heading"><div><h2>Download presets</h2><p>Defaults applied unless a subscription overrides them.</p></div><button class="primary" type="submit">Save presets</button></div>
+              <div class="settings-heading"><div><h2>Global Download Presets</h2><p>Defaults applied unless a subscription overrides them.</p></div><button class="primary" type="submit">Save presets</button></div>
               <section class="settings-card compact-card">
                 <h3>Workspace</h3>
                 <label>Working directory<input id="setting-working-dir" type="text" required></label>
@@ -191,7 +191,7 @@
               <div class="advanced-editor-layout">
                 <aside class="file-list" aria-label="Configuration files">
                   <button class="active" data-file="subscriptions.yaml"><strong>subscriptions.yaml</strong><span>Sources, paths, and tags</span></button>
-                  <button data-file="config.yaml"><strong>config.yaml</strong><span>Download presets</span></button>
+                  <button data-file="config.yaml"><strong>config.yaml</strong><span>Global download presets</span></button>
                   <button data-file="cron"><strong>cron</strong><span>Schedule runner</span></button>
                 </aside>
                 <section class="editor-panel">

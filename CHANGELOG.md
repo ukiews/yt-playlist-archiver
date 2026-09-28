@@ -2,6 +2,11 @@
 
 The version shown in the dashboard comes from `web/VERSION`. Each release updates that file, adds a section here, and receives a matching `vX.Y.Z` Git tag. Versioned container images use the same tag.
 
+## 1.0.1 — 2026-09-27
+
+- Make subscription format inheritance explicit with **Use Global Defaults**, while showing the inherited Configuration format settings as disabled fields.
+- Restore both services automatically after host restarts and allow the dashboard to start before the host receives its network address.
+
 ## 1.0.0 — 2026-09-22
 
 - Manage video and audio subscriptions from the browser, including adding, editing, removing, running, pausing, and resuming individual subscriptions or the full schedule.
