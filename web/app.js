@@ -420,6 +420,7 @@ function renderDownloads() {
 
 function renderActivity() {
   const data = appState.data;
+  $('#downloads-panel').classList.toggle('missing-review-active', data.missingQueue?.status === 'reviewing');
   $('#scheduler-status').textContent = data.missingQueue
     ? (data.missingQueue.status === 'downloading' ? 'Recovery download' : 'Paused for review')
     : data.job ? data.job.label : (data.allPaused ? 'Paused' : data.scheduleActive ? 'Watching' : 'Unavailable');
@@ -688,6 +689,10 @@ $('#run-all').addEventListener('click', async () => {
 });
 $('#queue-missing').addEventListener('click', async () => {
   const queue = appState.data?.missingQueue;
+  if (!queue) {
+    location.hash = 'activity';
+    setPage('activity');
+  }
   appState.missingScanRunning = true;
   render();
   try {

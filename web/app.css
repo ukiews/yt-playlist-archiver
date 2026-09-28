@@ -160,6 +160,7 @@ main { min-height: 0; overflow: hidden; }
 .missing-queue-empty { padding: 24px; text-align: center; color: var(--muted); }
 .downloads-panel, .editor-panel { min-height: 310px; display: grid; grid-template-rows: 55px minmax(0,1fr); border: 1px solid var(--line); border-radius: 9px; background: white; overflow: hidden; }
 .downloads-panel { flex: 1 0 310px; }
+.downloads-panel.missing-review-active { opacity: .48; filter: grayscale(.65); }
 .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid var(--line); background: #fafafa; }
 .panel-header h2 { margin: 0; font-size: 14px; }
 .panel-header span { display: block; color: var(--muted); font-size: 10px; }
@@ -339,8 +340,12 @@ html[data-theme="dark"] .panel-header,
 html[data-theme="dark"] .technical-toolbar,
 html[data-theme="dark"] .settings-nav,
 html[data-theme="dark"] .statusbar { background: #202730; }
-html[data-theme="dark"] button:not(.primary):not(.page-tab):not(.icon-button):not(.subscription-row):not(.settings-nav button):not(.file-list button) { background: #28323e; border-color: var(--line-strong); }
-html[data-theme="dark"] button:hover:not(.primary):not(.subscription-row):not(.page-tab) { background: #324255; }
+html[data-theme="dark"] button:not(.primary):not(.success):not(.danger):not(.page-tab):not(.icon-button):not(.subscription-row):not(.settings-nav button):not(.file-list button) { background: #28323e; border-color: var(--line-strong); }
+html[data-theme="dark"] button:hover:not(.primary):not(.success):not(.danger):not(.subscription-row):not(.page-tab) { background: #324255; }
+html[data-theme="dark"] button.success { color: #fff; border-color: #399564; background: linear-gradient(#2ba264,#207e4b); }
+html[data-theme="dark"] button.success:hover { background: linear-gradient(#34b270,#258b54); }
+html[data-theme="dark"] button.danger { color: #fff; border-color: #cf6565; background: linear-gradient(#c85555,#9f3d3d); }
+html[data-theme="dark"] button.danger:hover { background: linear-gradient(#d76161,#ac4444); }
 html[data-theme="dark"] .segmented button.active { background: #355d80 !important; border-color: #5796cf !important; color: #fff; }
 html[data-theme="dark"] .subscription-row,
 html[data-theme="dark"] .status-card,
