@@ -149,7 +149,16 @@ class LinkedAudioTests(unittest.TestCase):
         ))
         before = yaml.safe_load((self.config / "subscriptions.yaml").read_text())["yt_downloader_audio"]["sample_audio"]
 
-        server.patch_subscription("sample_video", self.payload(additionalAudio=True))
+        with self.assertRaises(server.ConfirmationRequired) as requested:
+            server.patch_subscription("sample_video", self.payload(additionalAudio=True))
+        self.assertEqual(requested.exception.confirmation["type"], "link-existing-audio")
+        self.assertIn("Existing files, archives, destinations", requested.exception.confirmation["message"])
+        self.assertEqual(server.linked_audio_outputs(), {})
+
+        server.patch_subscription(
+            "sample_video",
+            self.payload(additionalAudio=True, confirmLinkExistingAudio=True),
+        )
 
         after = yaml.safe_load((self.config / "subscriptions.yaml").read_text())["yt_downloader_audio"]["sample_audio"]
         self.assertEqual(after, before)

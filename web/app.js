@@ -177,7 +177,10 @@ async function api(path, options = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401 && path !== '/api/login') showLogin();
-    throw new Error(payload.error || `Request failed (${response.status})`);
+    const error = new Error(payload.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
   return payload;
 }
@@ -293,7 +296,7 @@ function renderSubscriptions() {
   $('#subscription-list').innerHTML = rows.map(row => `
     <button class="subscription-row ${row.id === appState.selected ? 'selected' : ''} ${row.paused ? 'paused' : ''}" data-id="${escapeHtml(row.id)}" type="button">
       <span class="subscription-main">
-        <span class="mode-icon ${row.mode}">${row.additionalAudio ? 'A+V' : row.mode === 'video' ? 'MP4' : 'M4A'}</span>
+        <span class="mode-icon ${row.additionalAudio ? 'combined' : row.mode}">${row.additionalAudio ? 'A+V' : row.mode === 'video' ? 'MP4' : 'M4A'}</span>
         <span class="subscription-copy"><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.genre || row.outputDir.replace('/media/',''))}</span></span>
       </span>
       <span class="schedule-cell"><strong>${row.paused ? 'Paused' : `${row.intervalMinutes} min`}</strong><span>${row.manuallyPaused ? 'Paused individually' : row.paused ? 'All paused' : friendlyTime(row.nextRun)}</span></span>
@@ -320,7 +323,7 @@ function selectSubscription(id) {
   $('#edit-id').value = row.id;
   $('#edit-title').textContent = row.name;
   $('#edit-mode').textContent = row.additionalAudio ? 'video + audio' : row.mode;
-  $('#edit-mode').className = `mode-pill ${row.mode}`;
+  $('#edit-mode').className = `mode-pill ${row.additionalAudio ? 'combined' : row.mode}`;
   $('#edit-url').value = row.url;
   $('#edit-output').value = row.outputDir;
   $('#edit-audio-copy-section').classList.toggle('hidden', row.mode !== 'video');
@@ -797,6 +800,7 @@ $('#new-additional-audio').addEventListener('change', () => {
 $('#edit-additional-audio').addEventListener('change', () => {
   const enabled = $('#edit-additional-audio').checked;
   $('#edit-mode').textContent = enabled ? 'video + audio' : 'video';
+  $('#edit-mode').className = `mode-pill ${enabled ? 'combined' : 'video'}`;
   if (enabled && (appState.editAudioDestinationInherited || !$('#edit-audio-output').value.trim())) {
     $('#edit-audio-output').value = $('#edit-output').value;
     appState.editAudioDestinationInherited = true;
@@ -938,7 +942,14 @@ $('#subscription-form').addEventListener('submit', async event => {
     embedThumbnail: $('#edit-embed-thumbnail').checked,
   };
   try {
-    await api('/api/subscription', {method:'POST', body: JSON.stringify(payload)});
+    try {
+      await api('/api/subscription', {method:'POST', body: JSON.stringify(payload)});
+    } catch (error) {
+      if (!error.payload?.confirmationRequired || !error.payload.confirmation?.message) throw error;
+      if (!window.confirm(error.payload.confirmation.message)) return;
+      payload.confirmLinkExistingAudio = true;
+      await api('/api/subscription', {method:'POST', body: JSON.stringify(payload)});
+    }
     toast(`${$('#edit-title').textContent} settings saved`);
     appState.editDirty = false;
     await refresh();

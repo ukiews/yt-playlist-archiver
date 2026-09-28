@@ -94,6 +94,7 @@ main { min-height: 0; overflow: hidden; }
 .subscription-main { min-width: 0; display: flex; align-items: center; gap: 12px; }
 .mode-icon { flex: none; width: 48px; height: 48px; border-radius: 8px; display: grid; place-items: center; background: #e7f2fc; color: #176fb9; font-size: 10px; font-weight: 800; letter-spacing: .06em; border: 1px solid #cde2f5; }
 .mode-icon.audio { color: #936514; background: #fff4d9; border-color: #f1dfb4; }
+.mode-icon.combined, .mode-pill.combined { color: #7540a8; background: #f1e7fb; border-color: #d8bcec; }
 .subscription-copy { min-width: 0; display: flex; flex-direction: column; }
 .subscription-copy strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .subscription-copy span { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
@@ -384,6 +385,8 @@ html[data-theme="dark"] .search-box input { background: transparent; border: 0; 
 html[data-theme="dark"] .mode-icon { background: #18354f; border-color: #2b5477; color: #9ad0ff; }
 html[data-theme="dark"] .mode-icon.audio,
 html[data-theme="dark"] .mode-pill.audio { background: #49371d; border-color: #71532b; color: #ffd48e; }
+html[data-theme="dark"] .mode-icon.combined,
+html[data-theme="dark"] .mode-pill.combined { background: #3b2850; border-color: #6a4690; color: #ddbaff; }
 html[data-theme="dark"] .download-tags span,
 html[data-theme="dark"] .schedule-members span,
 html[data-theme="dark"] .page-tab span { background: #303c49; color: var(--muted); }

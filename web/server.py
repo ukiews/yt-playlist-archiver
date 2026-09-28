@@ -80,6 +80,12 @@ MEDIA_EXTENSIONS = {".aac", ".flac", ".m4a", ".mkv", ".mov", ".mp3", ".mp4", ".o
 DEFAULT_MISSING_QUEUE_TIMEOUT = 15
 
 
+class ConfirmationRequired(Exception):
+    def __init__(self, message: str, confirmation: dict):
+        super().__init__(message)
+        self.confirmation = confirmation
+
+
 def read_text(path: Path, limit: int | None = None) -> str:
     try:
         data = path.read_text(encoding="utf-8", errors="replace")
@@ -1455,6 +1461,25 @@ def patch_subscription(subscription_id: str, payload: dict) -> None:
                     raise ValueError(
                         f"Subscription ID {audio_id} already exists but uses a different YouTube source"
                     )
+                if payload.get("confirmLinkExistingAudio") is not True:
+                    primary_name = rows[subscription_id]["name"]
+                    audio_name = existing_audio["name"]
+                    raise ConfirmationRequired(
+                        f"Confirm linking {subscription_id} with {audio_id}",
+                        {
+                            "type": "link-existing-audio",
+                            "primaryId": subscription_id,
+                            "primaryName": primary_name,
+                            "audioId": audio_id,
+                            "audioName": audio_name,
+                            "message": (
+                                f"Combine {primary_name} video and audio subscriptions?\n\n"
+                                "They will appear as one Video + Audio subscription, and matching download history "
+                                "will be grouped in Activity. Run, pause, and remove actions will apply to both.\n\n"
+                                "Existing files, archives, destinations, and audio settings will be preserved."
+                            ),
+                        },
+                    )
                 audio_exists = True
                 linking_existing = True
             mapping[subscription_id] = audio_id
@@ -2091,6 +2116,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "name": name})
             else:
                 self.send_json({"error": "Unknown action"}, HTTPStatus.NOT_FOUND)
+        except ConfirmationRequired as exc:
+            self.send_json(
+                {"error": str(exc), "confirmationRequired": True, "confirmation": exc.confirmation},
+                HTTPStatus.CONFLICT,
+            )
         except RuntimeError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
         except (ValueError, OSError, subprocess.SubprocessError) as exc:
