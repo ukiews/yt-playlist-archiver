@@ -39,6 +39,7 @@
     <nav class="toolbar" aria-label="Dashboard controls">
       <div class="toolbar-actions">
         <button id="run-all" class="toolbar-button primary" type="button"><span class="button-symbol">↓</span>Run all</button>
+        <button id="queue-missing" class="toolbar-button" type="button">Queue Missing</button>
         <button id="pause-all" class="toolbar-button" type="button">Pause all</button>
       </div>
       <div class="toolbar-meta">
@@ -117,6 +118,13 @@
             <article class="status-card"><span>Media storage</span><strong id="media-storage">—</strong><small id="media-storage-detail">—</small></article>
             <article class="status-card"><span>Last error</span><strong id="last-error">—</strong><small id="last-error-detail">—</small></article>
           </div>
+          <section id="missing-queue-panel" class="missing-queue-panel hidden">
+            <div class="missing-queue-header">
+              <div><h2>Missing Media Queue</h2><span id="missing-queue-summary">Review previously downloaded media that is no longer on disk.</span></div>
+              <div class="missing-queue-actions"><button id="check-all-missing" type="button">Check all</button><button id="uncheck-all-missing" type="button">Uncheck all</button></div>
+            </div>
+            <div id="missing-queue-list" class="missing-queue-list"></div>
+          </section>
           <section class="downloads-panel">
             <div class="panel-header">
               <div><h2>Downloads Activity</h2><span id="downloads-summary">Loading media history…</span></div>
@@ -180,7 +188,7 @@
             <form id="schedule-form" class="settings-page" data-settings-panel="schedule">
               <div class="settings-heading"><div><h2>Scheduler</h2><p>Each group is checked when its interval is due.</p></div><button class="primary" type="submit">Save schedule</button></div>
               <div id="schedule-cards" class="schedule-cards"></div>
-              <section class="settings-card schedule-info"><h3>Scheduler behavior</h3><p>The scheduler checks which groups are due using the intervals above. The directory lock prevents scheduled and manual checks from overlapping.</p></section>
+              <section class="settings-card schedule-info"><h3>Scheduler behavior</h3><label>Missing queue timeout<input id="missing-queue-timeout" type="number" min="5" max="120" required><span class="input-suffix">min</span></label><p>Queue Missing pauses automatic checks while you review previously downloaded media that is no longer on disk. The review closes automatically after this time.</p><p>The scheduler checks which groups are due using the intervals above. The directory lock prevents scheduled and manual checks from overlapping.</p></section>
             </form>
 
             <section class="settings-page advanced-settings" data-settings-panel="advanced">

@@ -2,6 +2,11 @@
 
 The version shown in the dashboard comes from `web/VERSION`. Each release updates that file, adds a section here, and receives a matching `vX.Y.Z` Git tag. Versioned container images use the same tag.
 
+## 1.1.0 — 2026-09-28
+
+- Find previously downloaded media that is missing from storage, review it with thumbnails and subscription details, and download only the checked items with their original subscription settings.
+- Pause automatic checks during missing-media review and recovery, with a configurable 15-minute review timeout and safe recovery after cancellation, expiration, or restart.
+
 ## 1.0.1 — 2026-09-27
 
 - Make subscription format inheritance explicit with **Use Global Defaults**, while showing the inherited Configuration format settings as disabled fields.

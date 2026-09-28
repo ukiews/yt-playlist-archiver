@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import copy
 import hashlib
 import hmac
 import json
@@ -41,6 +42,8 @@ LAST_ERROR_FILE = CONFIG_DIR / "ytdl-sub-last-error.txt"
 PAUSED_FILE = CONFIG_DIR / "paused-subscriptions.txt"
 PAUSE_ALL_FILE = CONFIG_DIR / "all-subscriptions-paused"
 HISTORY_FILE = CONFIG_DIR / "download-history.json"
+MISSING_QUEUE_FILE = CONFIG_DIR / ".yt-playlist-archiver-missing-queue.json"
+DASHBOARD_SETTINGS_FILE = CONFIG_DIR / "dashboard-settings.json"
 FIREFOX_PROFILE_DIR = Path(os.environ.get("FIREFOX_PROFILE_DIR", "/firefox-profile"))
 FIREFOX_BROWSER_PORT = int(os.environ.get("FIREFOX_BROWSER_PORT", "0"))
 FIREFOX_BROWSER_URL = os.environ.get("FIREFOX_BROWSER_URL", "").strip()
@@ -73,6 +76,8 @@ HISTORY_LOCK = threading.Lock()
 PROGRESS_LOCK = threading.Lock()
 CURRENT_JOB: dict | None = None
 PROGRESS_CACHE: tuple[tuple, dict] | None = None
+MEDIA_EXTENSIONS = {".aac", ".flac", ".m4a", ".mkv", ".mov", ".mp3", ".mp4", ".ogg", ".opus", ".wav", ".webm"}
+DEFAULT_MISSING_QUEUE_TIMEOUT = 15
 
 
 def read_text(path: Path, limit: int | None = None) -> str:
@@ -126,6 +131,12 @@ def preset_names(mode: str) -> tuple[str, ...]:
 
 def selected_preset(data: dict, mode: str) -> str:
     return next((name for name in preset_names(mode) if name in data), preset_names(mode)[0])
+
+
+def archive_file_name(template: str, subscription_id: str) -> str:
+    return (template or ".ytdl-sub-{subscription_name}-download-archive.json").replace(
+        "{subscription_name}", subscription_id
+    ).replace("{subscription_name_sanitized}", subscription_id)
 
 
 def read_secret(path: Path) -> str:
@@ -246,7 +257,15 @@ def subscription_rows() -> list[dict]:
         for name, raw in group.items():
             item = raw if isinstance(raw, dict) else {}
             output_dir = str((item.get("overrides") or {}).get("output_dir", ""))
-            archive_path = Path(output_dir) / f".ytdl-sub-{name}-download-archive.json"
+            preset_config = (config.get("presets") or {}).get(preset) or {}
+            preset_output = preset_config.get("output_options") or {}
+            item_output = item.get("output_options") or {}
+            if not isinstance(preset_output, dict):
+                preset_output = {}
+            if not isinstance(item_output, dict):
+                item_output = {}
+            archive_template = str(item_output.get("download_archive_name") or preset_output.get("download_archive_name") or "")
+            archive_path = Path(output_dir) / archive_file_name(archive_template, name)
             archive_count = 0
             archive_updated = None
             try:
@@ -263,7 +282,6 @@ def subscription_rows() -> list[dict]:
                 tags = item.get("music_tags") or {}
                 genres = tags.get("genres") or []
                 genre = genres[0] if isinstance(genres, list) and genres else None
-            preset_config = (config.get("presets") or {}).get(preset) or {}
             schedule_group = next(
                 (group_id for group_id, schedule in schedules.items() if name in schedule["subscriptions"]),
                 "",
@@ -293,6 +311,7 @@ def subscription_rows() -> list[dict]:
                 "nextRun": iso_time(next_run if next_run > now else now),
                 "archiveCount": archive_count,
                 "archiveUpdated": archive_updated,
+                "archivePath": str(archive_path),
                 "authenticated": name == "watch_later_video",
                 "paused": name in paused_ids or all_paused(),
                 "manuallyPaused": name in paused_ids,
@@ -303,7 +322,7 @@ def subscription_rows() -> list[dict]:
 def archive_entries(rows: list[dict]) -> dict[str, dict]:
     entries = {}
     for row in rows:
-        archive_path = Path(row["outputDir"]) / f".ytdl-sub-{row['id']}-download-archive.json"
+        archive_path = subscription_archive_path(row)
         try:
             archive = json.loads(archive_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -425,6 +444,245 @@ def latest_downloads(rows: list[dict], limit: int = 80) -> list[dict]:
         if changed:
             atomic_write(HISTORY_FILE, json.dumps({"seen": sorted(seen), "events": list(events.values())[-1000:]}, ensure_ascii=False), 0o600)
         return downloads[:limit]
+
+
+def dashboard_settings() -> dict:
+    try:
+        settings = json.loads(DASHBOARD_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        settings = {}
+    timeout = settings.get("missingQueueTimeoutMinutes", DEFAULT_MISSING_QUEUE_TIMEOUT)
+    try:
+        timeout = int(timeout)
+    except (TypeError, ValueError):
+        timeout = DEFAULT_MISSING_QUEUE_TIMEOUT
+    return {"missingQueueTimeoutMinutes": min(120, max(5, timeout))}
+
+
+def subscription_archive_path(row: dict) -> Path:
+    return Path(row.get("archivePath") or (Path(row["outputDir"]) / f".ytdl-sub-{row['id']}-download-archive.json"))
+
+
+def missing_media_items(rows: list[dict]) -> list[dict]:
+    history = {}
+    try:
+        ledger = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+        for event in ledger.get("events") or []:
+            if isinstance(event, dict) and event.get("subscriptionId") and event.get("videoId"):
+                history[(event["subscriptionId"], event["videoId"])] = event
+    except (OSError, ValueError, AttributeError):
+        pass
+
+    items = []
+    for row in rows:
+        archive_path = subscription_archive_path(row)
+        try:
+            archive = json.loads(archive_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(archive, dict):
+            continue
+        for raw_video_id, archive_entry in archive.items():
+            video_id = str(raw_video_id)
+            if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id) or not isinstance(archive_entry, dict):
+                continue
+            media_names = [
+                name for name in archive_entry.get("file_names") or []
+                if isinstance(name, str) and Path(name).suffix.lower() in MEDIA_EXTENSIONS
+            ]
+            if not media_names:
+                continue
+            media_paths = [Path(row["outputDir"]) / name for name in media_names]
+            if any(path.is_file() for path in media_paths):
+                continue
+            previous = history.get((row["id"], video_id), {})
+            file_name = media_names[0]
+            items.append({
+                "key": f"{row['id']}:{video_id}",
+                "videoId": video_id,
+                "subscriptionId": row["id"],
+                "playlist": row["name"],
+                "mode": row["mode"],
+                "genre": row.get("genre"),
+                "title": previous.get("title") or Path(file_name).stem,
+                "channel": previous.get("channel") or "",
+                "fileName": file_name,
+                "missingFiles": media_names,
+                "folder": row["outputDir"],
+                "thumbnail": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
+                "sourceUrl": f"https://www.youtube.com/watch?v={video_id}",
+                "archivePath": str(archive_path),
+            })
+    return sorted(items, key=lambda item: (item["playlist"].lower(), item["title"].lower(), item["mode"]))
+
+
+def verify_missing_media_items(items: list[dict], rows: list[dict]) -> list[dict]:
+    rows_by_id = {row["id"]: row for row in rows}
+    grouped: dict[str, list[dict]] = {}
+    for item in items:
+        grouped.setdefault(item["subscriptionId"], []).append(item)
+    verified = []
+    cookie_file = CONFIG_DIR / "youtube_cookies.txt"
+    for subscription_id, candidates in grouped.items():
+        row = rows_by_id.get(subscription_id, {})
+        source_url = str(row.get("url", "")).strip()
+        command = ["yt-dlp", "--flat-playlist", "--dump-single-json", "--skip-download", "--ignore-errors"]
+        if cookie_file.is_file() and cookie_file.stat().st_size:
+            command.extend(["--cookies", str(cookie_file)])
+        command.append(source_url)
+        try:
+            result = subprocess.run(
+                command,
+                cwd=CONFIG_DIR,
+                text=True,
+                capture_output=True,
+                timeout=300,
+                env={**os.environ, "NO_COLOR": "1"},
+            )
+            metadata = json.loads(result.stdout)
+            if result.returncode or not isinstance(metadata, dict):
+                raise ValueError("playlist metadata could not be read")
+            entries = metadata.get("entries")
+            if not isinstance(entries, list):
+                entries = [metadata]
+            available = {
+                str(entry.get("id")): entry for entry in entries
+                if isinstance(entry, dict) and entry.get("id")
+            }
+            for item in candidates:
+                entry = available.get(item["videoId"])
+                if not entry:
+                    continue
+                updated = dict(item)
+                updated["title"] = str(entry.get("title") or item["title"])
+                updated["channel"] = str(entry.get("channel") or entry.get("uploader") or item["channel"])
+                updated["availability"] = "available"
+                verified.append(updated)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            for item in candidates:
+                verified.append({**item, "availability": "unverified"})
+    return sorted(verified, key=lambda item: (item["playlist"].lower(), item["title"].lower(), item["mode"]))
+
+
+def write_missing_queue(state: dict) -> None:
+    atomic_write(MISSING_QUEUE_FILE, json.dumps(state, ensure_ascii=False, indent=2) + "\n", 0o600)
+
+
+def cleanup_missing_queue_artifacts(state: dict) -> None:
+    temporary_file = state.get("temporarySubscriptionFile")
+    if isinstance(temporary_file, str) and temporary_file.startswith(str(CONFIG_DIR) + os.sep):
+        Path(temporary_file).unlink(missing_ok=True)
+    for context in state.get("recoveryContexts") or []:
+        temporary_archive = context.get("temporaryArchive") if isinstance(context, dict) else None
+        if isinstance(temporary_archive, str):
+            Path(temporary_archive).unlink(missing_ok=True)
+
+
+def merge_missing_recovery_archives(state: dict) -> None:
+    for context in state.get("recoveryContexts") or []:
+        if not isinstance(context, dict):
+            continue
+        temporary_archive = Path(str(context.get("temporaryArchive", "")))
+        original_archive = Path(str(context.get("originalArchive", "")))
+        try:
+            recovered_archive = json.loads(temporary_archive.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            recovered_archive = {}
+        if not isinstance(recovered_archive, dict):
+            continue
+        video_ids = context.get("videoIds") or []
+        successful = {video_id: recovered_archive[video_id] for video_id in video_ids if video_id in recovered_archive}
+        if not successful:
+            continue
+        try:
+            original = json.loads(original_archive.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            original = {}
+        if not isinstance(original, dict):
+            original = {}
+        if original_archive.exists():
+            safe_backup(original_archive)
+        original.update(successful)
+        atomic_write(original_archive, json.dumps(original, ensure_ascii=False, indent=2) + "\n", 0o600)
+
+
+def clear_missing_queue(state: dict | None = None) -> None:
+    if state:
+        cleanup_missing_queue_artifacts(state)
+    MISSING_QUEUE_FILE.unlink(missing_ok=True)
+    try:
+        schedule_lock_dir().rmdir()
+    except OSError:
+        pass
+
+
+def missing_queue_state() -> dict | None:
+    try:
+        state = json.loads(MISSING_QUEUE_FILE.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    except ValueError:
+        clear_missing_queue()
+        return None
+    if not isinstance(state, dict) or not isinstance(state.get("items"), list):
+        clear_missing_queue(state if isinstance(state, dict) else None)
+        return None
+    recovery_running = bool(CURRENT_JOB and CURRENT_JOB.get("kind") == "missing-recovery")
+    if state.get("status") == "downloading" and not recovery_running:
+        merge_missing_recovery_archives(state)
+        clear_missing_queue(state)
+        return None
+    try:
+        expires_at = float(state.get("expiresEpoch", 0))
+    except (TypeError, ValueError):
+        expires_at = 0
+    if state.get("status") != "downloading" and time.time() >= expires_at:
+        clear_missing_queue(state)
+        return None
+    if not schedule_lock_dir().exists():
+        try:
+            schedule_lock_dir().mkdir()
+        except FileExistsError:
+            pass
+    return state
+
+
+def start_missing_queue() -> dict | None:
+    with JOB_LOCK:
+        if CURRENT_JOB or schedule_lock_dir().exists():
+            raise RuntimeError("Wait for the current download check to finish")
+        schedule_lock_dir().mkdir()
+    try:
+        rows = subscription_rows()
+        items = verify_missing_media_items(missing_media_items(rows), rows)
+        if not items:
+            clear_missing_queue()
+            return None
+        timeout = dashboard_settings()["missingQueueTimeoutMinutes"]
+        now = time.time()
+        state = {
+            "id": secrets.token_hex(8),
+            "status": "reviewing",
+            "createdAt": iso_time(now),
+            "expiresAt": iso_time(now + timeout * 60),
+            "expiresEpoch": now + timeout * 60,
+            "timeoutMinutes": timeout,
+            "items": items,
+        }
+        write_missing_queue(state)
+        return state
+    except Exception:
+        clear_missing_queue()
+        raise
+
+
+def cancel_missing_queue() -> None:
+    state = missing_queue_state()
+    if not state:
+        return
+    if CURRENT_JOB and CURRENT_JOB.get("kind") == "missing-recovery":
+        raise RuntimeError("Wait for the selected downloads to finish")
+    clear_missing_queue(state)
 
 
 def browser_reachable(url: str) -> bool | None:
@@ -654,6 +912,8 @@ def job_state() -> dict | None:
     with JOB_LOCK:
         if CURRENT_JOB:
             return dict(CURRENT_JOB)
+    if MISSING_QUEUE_FILE.exists():
+        return None
     if schedule_lock_dir().exists():
         try:
             started_at = iso_time(schedule_lock_dir().stat().st_mtime)
@@ -816,6 +1076,7 @@ def progress_payload() -> dict:
 
 def state_payload() -> dict:
     rows = subscription_rows()
+    missing_queue = missing_queue_state()
     cron_log = read_text(CONFIG_DIR / ".cron.log", 60000)
     manual_log = read_text(MANUAL_LOG, 30000)
     return {
@@ -826,7 +1087,8 @@ def state_payload() -> dict:
         "allPaused": all_paused(),
         "lastError": last_error_state(),
         "job": job_state(),
-        "scheduleActive": (CONFIG_DIR / "cron").exists() and not all_paused(),
+        "missingQueue": missing_queue,
+        "scheduleActive": (CONFIG_DIR / "cron").exists() and not all_paused() and not missing_queue,
         "logs": {"scheduled": cron_log, "manual": manual_log},
         "latestDownloads": latest_downloads(rows),
         "storage": {
@@ -856,6 +1118,7 @@ def settings_payload() -> dict:
     music_tags = audio.get("music_tags") or {}
     return {
         "workingDirectory": (config.get("configuration") or {}).get("working_directory", "/config/working"),
+        **dashboard_settings(),
         "video": {
             "format": video.get("format", ""),
             "fileName": video_output.get("file_name", ""),
@@ -1103,6 +1366,9 @@ def save_schedule_settings(payload: dict) -> None:
         requested[group] = interval
     if set(requested) != set(definitions):
         raise ValueError("All schedule groups are required")
+    timeout = int(payload.get("missingQueueTimeoutMinutes", DEFAULT_MISSING_QUEUE_TIMEOUT))
+    if timeout < 5 or timeout > 120:
+        raise ValueError("Missing queue timeout must be between 5 and 120 minutes")
     path = CONFIG_DIR / "cron"
     cron = read_text(path)
     updated = cron
@@ -1114,6 +1380,13 @@ def save_schedule_settings(payload: dict) -> None:
     validate_file("cron", updated)
     safe_backup(path)
     atomic_write(path, updated, 0o755)
+    if DASHBOARD_SETTINGS_FILE.exists():
+        safe_backup(DASHBOARD_SETTINGS_FILE)
+    atomic_write(
+        DASHBOARD_SETTINGS_FILE,
+        json.dumps({"missingQueueTimeoutMinutes": timeout}, indent=2) + "\n",
+        0o600,
+    )
 
 
 def save_config_settings(payload: dict) -> None:
@@ -1160,10 +1433,18 @@ def save_config_settings(payload: dict) -> None:
     atomic_write(path, updated)
 
 
-def finish_job(process: subprocess.Popen, log_handle, job_id: str) -> None:
+def finish_job(process: subprocess.Popen, log_handle, job_id: str, on_finish=None) -> None:
     global CURRENT_JOB
     code = process.wait()
     finished = iso_time(time.time())
+    finish_error = None
+    if on_finish:
+        try:
+            on_finish(code)
+        except Exception as exc:
+            finish_error = exc
+            code = code or 1
+            log_handle.write(f"\n[{finished}] Finalization failed: {exc}\n")
     log_handle.write(f"\n[{finished}] Dashboard job finished with exit code {code}.\n")
     log_handle.close()
     if code:
@@ -1177,14 +1458,20 @@ def finish_job(process: subprocess.Popen, log_handle, job_id: str) -> None:
     with JOB_LOCK:
         if CURRENT_JOB and CURRENT_JOB.get("id") == job_id:
             CURRENT_JOB = None
+    if finish_error:
+        print(f"Dashboard job finalization failed: {finish_error}", flush=True)
 
 
-def start_job(kind: str, label: str, command: list[str]) -> dict:
+def start_job(kind: str, label: str, command: list[str], *, reuse_lock: bool = False, on_finish=None) -> dict:
     global CURRENT_JOB
     with JOB_LOCK:
-        if CURRENT_JOB or schedule_lock_dir().exists():
+        if CURRENT_JOB or (schedule_lock_dir().exists() and not reuse_lock):
             raise RuntimeError("Another scheduled or manual check is already running")
-        schedule_lock_dir().mkdir()
+        if reuse_lock:
+            if not schedule_lock_dir().exists():
+                raise RuntimeError("The missing-media review lock was lost")
+        else:
+            schedule_lock_dir().mkdir()
         job_id = secrets.token_hex(6)
         CURRENT_JOB = {
             "id": job_id,
@@ -1214,8 +1501,94 @@ def start_job(kind: str, label: str, command: list[str]) -> dict:
         with JOB_LOCK:
             CURRENT_JOB = None
         raise
-    threading.Thread(target=finish_job, args=(process, log_handle, job_id), daemon=True).start()
+    threading.Thread(target=finish_job, args=(process, log_handle, job_id, on_finish), daemon=True).start()
     return dict(CURRENT_JOB)
+
+
+def start_missing_recovery(selected_keys: list[str]) -> dict:
+    state = missing_queue_state()
+    if not state or state.get("status") != "reviewing":
+        raise ValueError("Start a missing-media review first")
+    if not selected_keys:
+        raise ValueError("Select at least one missing item")
+    indexed = {item.get("key"): item for item in state["items"] if isinstance(item, dict)}
+    if any(key not in indexed for key in selected_keys):
+        raise ValueError("The missing-media selection is out of date")
+    selected = [indexed[key] for key in dict.fromkeys(selected_keys)]
+
+    subscriptions = load_subscriptions()
+    rows = {row["id"]: row for row in subscription_rows()}
+    grouped: dict[str, list[dict]] = {}
+    for item in selected:
+        grouped.setdefault(item["subscriptionId"], []).append(item)
+
+    token = secrets.token_hex(5)
+    temporary_subscriptions = {}
+    contexts = []
+    for subscription_id, items in grouped.items():
+        row = rows.get(subscription_id)
+        if not row:
+            raise ValueError(f"Subscription {subscription_id} no longer exists")
+        preset_name = selected_preset(subscriptions, row["mode"])
+        source_group = subscriptions.get(preset_name)
+        if not isinstance(source_group, dict) or subscription_id not in source_group:
+            raise ValueError(f"Cannot locate subscription {subscription_id}")
+        raw = source_group[subscription_id]
+        recovered = copy.deepcopy(raw) if isinstance(raw, dict) else {}
+        urls = [item["sourceUrl"] for item in items]
+        recovered["download"] = urls[0] if len(urls) == 1 else urls
+        temporary_archive_name = f".yt-playlist-archiver-recovery-{token}-{subscription_id}.json"
+        output_options = recovered.get("output_options")
+        if not isinstance(output_options, dict):
+            output_options = {}
+        output_options.update({
+            "download_archive_name": temporary_archive_name,
+            "maintain_download_archive": True,
+            "sync_with_source": False,
+        })
+        recovered["output_options"] = output_options
+        temporary_subscriptions.setdefault(preset_name, {})[subscription_id] = recovered
+        contexts.append({
+            "subscriptionId": subscription_id,
+            "videoIds": [item["videoId"] for item in items],
+            "originalArchive": str(subscription_archive_path(row)),
+            "temporaryArchive": str(Path(row["outputDir"]) / temporary_archive_name),
+        })
+
+    temporary_file = CONFIG_DIR / f".yt-playlist-archiver-recovery-{token}.yaml"
+    atomic_write(temporary_file, dump_yaml(temporary_subscriptions), 0o600)
+    state.update({
+        "status": "downloading",
+        "selectedKeys": [item["key"] for item in selected],
+        "temporarySubscriptionFile": str(temporary_file),
+        "recoveryContexts": contexts,
+    })
+    write_missing_queue(state)
+
+    def finish_recovery(_code: int) -> None:
+        merge_missing_recovery_archives(state)
+        clear_missing_queue(state)
+
+    command = [
+        "ytdl-sub", "sub", str(temporary_file), "--suppress-colors", "--log-level", "verbose", "--match",
+        *sorted(grouped),
+    ]
+    try:
+        return start_job(
+            "missing-recovery",
+            f"Download {len(selected)} checked missing item{'s' if len(selected) != 1 else ''}",
+            command,
+            reuse_lock=True,
+            on_finish=finish_recovery,
+        )
+    except Exception:
+        state["status"] = "reviewing"
+        state.pop("selectedKeys", None)
+        cleanup_missing_queue_artifacts(state)
+        state.pop("temporarySubscriptionFile", None)
+        state.pop("recoveryContexts", None)
+        write_missing_queue(state)
+        raise
 
 
 def make_session(secret: str) -> str:
@@ -1363,7 +1736,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self.require_auth():
             return
         try:
-            if path == "/api/run":
+            if path == "/api/missing-queue/start":
+                queue = start_missing_queue()
+                self.send_json({"ok": True, "missingQueue": queue})
+            elif path == "/api/missing-queue/cancel":
+                cancel_missing_queue()
+                self.send_json({"ok": True})
+            elif path == "/api/missing-queue/download":
+                keys = payload.get("keys")
+                if not isinstance(keys, list) or any(not isinstance(key, str) for key in keys):
+                    raise ValueError("keys must be a list of missing item IDs")
+                self.send_json({"job": start_missing_recovery(keys)}, HTTPStatus.ACCEPTED)
+            elif path == "/api/run":
                 if all_paused():
                     raise ValueError("Resume all subscriptions before running a check")
                 requested = payload.get("subscriptions") or []
@@ -1463,6 +1847,7 @@ if __name__ == "__main__":
     def watch_archives() -> None:
         while True:
             try:
+                missing_queue_state()
                 latest_downloads(subscription_rows())
             except Exception as exc:
                 print(f"Download history update failed: {exc}", flush=True)

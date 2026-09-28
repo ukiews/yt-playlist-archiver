@@ -132,6 +132,7 @@ Keep `COMPOSE_PROJECT_NAME` unchanged for an existing project. The two core serv
 
 - Audio and video subscriptions with individual and global pause controls
 - Manual and scheduled runs with live item transfer progress and persistent download history
+- A missing-media review queue that can selectively recover previously downloaded files removed from storage
 - Editable folders, genres, source URLs, formats, tags, naming templates, and intervals
 - Guided format controls and a raw yt-dlp expression option
 - Watch Later authentication without returning cookie contents through the API

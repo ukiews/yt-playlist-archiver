@@ -37,6 +37,9 @@ const appState = {
   clockPoll: null,
   nextCheck: null,
   hadActiveJob: false,
+  missingQueueId: null,
+  missingChecked: new Set(),
+  missingScanRunning: false,
 };
 
 function escapeHtml(value = '') {
@@ -206,15 +209,73 @@ function showApp() {
   clearInterval(appState.clockPoll);
   appState.clockPoll = setInterval(() => {
     if (appState.nextCheck) $('#next-check').textContent = nextCheckTime(appState.nextCheck);
+    if (appState.data?.missingQueue) updateMissingControls();
   }, 1000);
 }
 
 function statusClass() {
   if (!appState.data) return '';
+  if (appState.data.missingQueue?.status === 'downloading') return 'busy';
+  if (appState.data.missingQueue) return 'paused';
   if (appState.data.allPaused) return 'paused';
   if (!appState.data.auth.ok) return 'error';
   if (appState.data.job) return 'busy';
   return 'ok';
+}
+
+function missingQueueRemaining(queue) {
+  if (!queue?.expiresAt) return '';
+  const seconds = Math.max(0, Math.ceil((Date.parse(queue.expiresAt) - Date.now()) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function syncMissingSelection(queue) {
+  if (!queue) {
+    appState.missingQueueId = null;
+    appState.missingChecked = new Set();
+    return;
+  }
+  if (appState.missingQueueId !== queue.id) {
+    appState.missingQueueId = queue.id;
+    appState.missingChecked = new Set(queue.status === 'downloading' ? (queue.selectedKeys || []) : queue.items.map(item => item.key));
+  }
+}
+
+function updateMissingControls() {
+  const queue = appState.data?.missingQueue;
+  if (!queue) return;
+  const checked = queue.items.filter(item => appState.missingChecked.has(item.key)).length;
+  const downloading = queue.status === 'downloading';
+  $('#missing-queue-summary').textContent = downloading
+    ? `Downloading ${checked} checked item${checked === 1 ? '' : 's'} · automatic checks remain paused`
+    : `${checked} of ${queue.items.length} checked · review closes in ${missingQueueRemaining(queue)}`;
+  $('#run-all').disabled = downloading || Boolean(appState.data.job) || checked === 0;
+}
+
+function renderMissingQueue() {
+  const queue = appState.data?.missingQueue;
+  syncMissingSelection(queue);
+  const panel = $('#missing-queue-panel');
+  panel.classList.toggle('hidden', !queue);
+  if (!queue) return;
+  const downloading = queue.status === 'downloading';
+  $('#missing-queue-list').innerHTML = queue.items.map(item => `
+    <label class="missing-row">
+      <input type="checkbox" data-missing-key="${escapeHtml(item.key)}" ${appState.missingChecked.has(item.key) ? 'checked' : ''} ${downloading ? 'disabled' : ''}>
+      <span class="download-thumb"><img src="${escapeHtml(item.thumbnail)}" alt="" loading="lazy"></span>
+      <span class="missing-copy"><strong>${escapeHtml(item.title)}</strong><span title="${escapeHtml(item.fileName)}">${escapeHtml(item.channel || item.fileName)}</span><span class="download-tags"><span>${item.mode === 'video' ? 'Video' : 'Audio'}</span>${item.genre ? `<span>${escapeHtml(item.genre)}</span>` : ''}${item.availability === 'unverified' ? '<span>Availability unverified</span>' : ''}</span></span>
+      <span class="missing-meta"><strong>${escapeHtml(item.playlist)}</strong><span>Missing ${escapeHtml(item.fileName)}</span></span>
+    </label>`).join('') || '<div class="missing-queue-empty">No missing media was found.</div>';
+  $$('[data-missing-key]').forEach(input => input.addEventListener('change', () => {
+    if (input.checked) appState.missingChecked.add(input.dataset.missingKey);
+    else appState.missingChecked.delete(input.dataset.missingKey);
+    updateMissingControls();
+  }));
+  $$('#missing-queue-list img').forEach(image => image.addEventListener('error', () => { image.parentElement.textContent = 'YT'; }));
+  $('#check-all-missing').disabled = downloading;
+  $('#uncheck-all-missing').disabled = downloading;
+  updateMissingControls();
 }
 
 function renderSubscriptions() {
@@ -271,7 +332,7 @@ function selectSubscription(id) {
   $('#edit-artwork-row').classList.toggle('hidden', row.mode !== 'audio');
   $('#pause-selected').textContent = row.manuallyPaused ? 'Resume' : 'Pause';
   $('#pause-selected').classList.toggle('resume', row.manuallyPaused);
-  $('#run-selected').disabled = Boolean(row.paused || appState.data.job);
+  $('#run-selected').disabled = Boolean(row.paused || appState.data.job || appState.data.missingQueue);
   const groupMembers = appState.data.subscriptions.filter(item => item.scheduleGroup === row.scheduleGroup).length;
   $('#schedule-note').textContent = groupMembers > 1 ? `This interval is shared by ${groupMembers} subscriptions in the same schedule group.` : 'This subscription has its own schedule group.';
   $('#edit-archive').textContent = `${row.archiveCount.toLocaleString()} items`;
@@ -359,7 +420,9 @@ function renderDownloads() {
 
 function renderActivity() {
   const data = appState.data;
-  $('#scheduler-status').textContent = data.job ? data.job.label : (data.allPaused ? 'Paused' : data.scheduleActive ? 'Watching' : 'Unavailable');
+  $('#scheduler-status').textContent = data.missingQueue
+    ? (data.missingQueue.status === 'downloading' ? 'Recovery download' : 'Paused for review')
+    : data.job ? data.job.label : (data.allPaused ? 'Paused' : data.scheduleActive ? 'Watching' : 'Unavailable');
   $('#auth-card-status').textContent = data.auth.ok ? 'Authenticated' : 'Action needed';
   $('#auth-card-detail').textContent = data.auth.status;
   const disk = data.storage.videos.total ? data.storage.videos : data.storage.music;
@@ -372,6 +435,7 @@ function renderActivity() {
   $('#activity-log').textContent = data.logs[appState.log] || 'No activity has been recorded yet.';
   $('#log-updated').textContent = `Refreshed ${new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'})}`;
   $('#activity-badge').classList.toggle('hidden', !data.job);
+  renderMissingQueue();
   renderDownloads();
 }
 
@@ -468,6 +532,7 @@ function renderSettings() {
   const settings = appState.settings;
   if (!settings) return;
   setField('setting-working-dir', settings.workingDirectory);
+  setField('missing-queue-timeout', settings.missingQueueTimeoutMinutes);
   for (const [prefix, preset] of [['video', settings.video], ['audio', settings.audio]]) {
     for (const [key, suffix] of [
       ['fileName','file-name'], ['archiveName','archive-name'],
@@ -512,19 +577,31 @@ function render() {
   if (!data) return;
   const cls = statusClass();
   $('#live-dot').className = `state-dot ${cls}`;
-  $('#system-label').textContent = data.job ? 'Check running' : data.allPaused ? 'Checks paused' : !data.auth.ok ? 'YouTube sign-in needed' : data.scheduleActive ? 'Scheduler active' : 'Scheduler unavailable';
+  $('#system-label').textContent = data.missingQueue
+    ? (data.missingQueue.status === 'downloading' ? 'Downloading checked media' : 'Missing-media review')
+    : data.job ? 'Check running' : data.allPaused ? 'Checks paused' : !data.auth.ok ? 'YouTube sign-in needed' : data.scheduleActive ? 'Scheduler active' : 'Scheduler unavailable';
   const lastDownload = data.latestDownloads?.[0];
   $('#footer-status').textContent = lastDownload?.downloadedAt ? `Last download ${friendlyTime(lastDownload.downloadedAt)}` : 'No downloads recorded yet';
   $('#footer-status').title = lastDownload?.fileName || '';
   $('#app-version').textContent = `YT Playlist Archiver v${data.version}`;
   $('#library-total').textContent = `${data.totals.archived.toLocaleString()} archived`;
   const next = data.subscriptions.filter(item => !item.paused).map(item => item.nextRun).filter(Boolean).sort()[0];
-  appState.nextCheck = next || null;
-  $('#next-check').textContent = nextCheckTime(appState.nextCheck);
+  appState.nextCheck = data.missingQueue ? null : (next || null);
+  $('#next-check').textContent = data.missingQueue ? 'Paused for review' : nextCheckTime(appState.nextCheck);
   $('#subscription-count').textContent = data.totals.subscriptions;
-  const disabled = Boolean(data.job);
+  syncMissingSelection(data.missingQueue);
+  const disabled = Boolean(data.job || data.missingQueue);
   for (const id of ['run-all','check-auth','run-selected']) $(`#${id}`).disabled = disabled;
-  $('#run-all').disabled = disabled || data.allPaused || data.subscriptions.every(item => item.paused);
+  $('#run-all').innerHTML = data.missingQueue ? '<span class="button-symbol">↓</span>Download Checked Only' : '<span class="button-symbol">↓</span>Run all';
+  $('#run-all').classList.toggle('success', Boolean(data.missingQueue));
+  $('#run-all').classList.toggle('primary', !data.missingQueue);
+  $('#run-all').disabled = data.missingQueue
+    ? data.missingQueue.status === 'downloading' || Boolean(data.job) || appState.missingChecked.size === 0
+    : disabled || data.allPaused || data.subscriptions.every(item => item.paused);
+  $('#queue-missing').textContent = data.missingQueue ? 'Cancel' : (appState.missingScanRunning ? 'Scanning…' : 'Queue Missing');
+  $('#queue-missing').classList.toggle('danger', Boolean(data.missingQueue));
+  $('#queue-missing').disabled = appState.missingScanRunning || Boolean(data.job) || data.missingQueue?.status === 'downloading';
+  $('#pause-all').disabled = disabled;
   $('#pause-all').textContent = data.allPaused ? 'Resume all' : 'Pause all';
   renderSubscriptions();
   renderActivity();
@@ -597,7 +674,44 @@ $$('[data-filter]').forEach(button => button.addEventListener('click', () => {
 }));
 $('#search').addEventListener('input', event => { appState.search = event.target.value; renderSubscriptions(); });
 $('#close-inspector').addEventListener('click', closeInspector);
-$('#run-all').addEventListener('click', () => startRun([]));
+$('#run-all').addEventListener('click', async () => {
+  if (!appState.data?.missingQueue) {
+    startRun([]);
+    return;
+  }
+  const keys = appState.data.missingQueue.items.map(item => item.key).filter(key => appState.missingChecked.has(key));
+  try {
+    const result = await api('/api/missing-queue/download', {method:'POST', body: JSON.stringify({keys})});
+    toast(`${result.job.label} started`);
+    await refresh();
+  } catch (error) { toast(error.message, 'error'); }
+});
+$('#queue-missing').addEventListener('click', async () => {
+  const queue = appState.data?.missingQueue;
+  appState.missingScanRunning = true;
+  render();
+  try {
+    if (queue) {
+      await api('/api/missing-queue/cancel', {method:'POST', body:'{}'});
+      toast('Missing-media review canceled; automatic checks resumed');
+    } else {
+      const result = await api('/api/missing-queue/start', {method:'POST', body:'{}'});
+      toast(result.missingQueue
+        ? `${result.missingQueue.items.length} missing item${result.missingQueue.items.length === 1 ? '' : 's'} ready to review`
+        : 'No previously downloaded media is missing');
+    }
+    await refresh();
+  } catch (error) { toast(error.message, 'error'); }
+  finally { appState.missingScanRunning = false; render(); }
+});
+$('#check-all-missing').addEventListener('click', () => {
+  appState.missingChecked = new Set((appState.data?.missingQueue?.items || []).map(item => item.key));
+  renderMissingQueue();
+});
+$('#uncheck-all-missing').addEventListener('click', () => {
+  appState.missingChecked.clear();
+  renderMissingQueue();
+});
 $('#pause-all').addEventListener('click', async () => {
   const paused = !appState.data.allPaused;
   try {
@@ -792,7 +906,7 @@ $('#schedule-form').addEventListener('submit', async event => {
   event.preventDefault();
   const schedules = $$('[data-schedule-id]').map(input => ({id: input.dataset.scheduleId, intervalMinutes: Number(input.value)}));
   try {
-    await api('/api/settings/schedule', {method:'POST', body: JSON.stringify({schedules})});
+    await api('/api/settings/schedule', {method:'POST', body: JSON.stringify({schedules, missingQueueTimeoutMinutes: Number($('#missing-queue-timeout').value)})});
     toast('Scheduler intervals saved and backed up');
     await Promise.all([loadSettings(), refresh()]);
   } catch (error) { toast(error.message, 'error'); }
