@@ -81,6 +81,14 @@ class LinkedAudioTests(unittest.TestCase):
         self.assertEqual(rows[0]["rawIds"], ["sample_video", "sample_audio"])
         self.assertTrue(rows[0]["additionalAudio"])
 
+    def test_audio_destination_defaults_to_main_destination(self):
+        server.create_subscription(self.payload(audioOutputDir=""))
+        data = yaml.safe_load((self.config / "subscriptions.yaml").read_text())
+        self.assertEqual(
+            data["yt_downloader_audio"]["sample_audio"]["overrides"]["output_dir"],
+            "/media/videos/Sample",
+        )
+
     def test_pause_and_remove_apply_to_both_jobs(self):
         server.create_subscription(self.payload())
         server.set_subscription_paused("sample_video", True)

@@ -1393,7 +1393,7 @@ def companion_audio_id(subscription_id: str) -> str:
 def companion_audio_payload(payload: dict) -> dict:
     result = {
         "url": payload.get("url"),
-        "outputDir": payload.get("audioOutputDir"),
+        "outputDir": payload.get("audioOutputDir") or payload.get("outputDir"),
         "genre": payload.get("genre"),
         "format": "",
         "metadata": copy.deepcopy(payload.get("metadata") or {}),
@@ -1425,7 +1425,7 @@ def patch_subscription(subscription_id: str, payload: dict) -> None:
     cron = read_text(cron_path)
     group = rows[subscription_id]["scheduleGroup"]
     if wants_audio:
-        if not str(payload.get("audioOutputDir", "")).strip():
+        if not str(payload.get("audioOutputDir") or payload.get("outputDir") or "").strip():
             raise ValueError("Choose a destination for the separate audio copy")
         audio_exists = bool(audio_id and audio_id in rows)
         if not audio_id:
@@ -1515,7 +1515,7 @@ def create_subscription(payload: dict) -> str:
     mapping = linked_audio_outputs()
     audio_id = None
     if mode == "video" and bool(payload.get("additionalAudio")):
-        if not str(payload.get("audioOutputDir", "")).strip():
+        if not str(payload.get("audioOutputDir") or payload.get("outputDir") or "").strip():
             raise ValueError("Choose a destination for the separate audio copy")
         audio_id = companion_audio_id(subscription_id)
         if audio_id in existing_ids or audio_id == subscription_id:

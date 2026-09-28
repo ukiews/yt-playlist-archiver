@@ -40,6 +40,8 @@ const appState = {
   missingQueueId: null,
   missingChecked: new Set(),
   missingScanRunning: false,
+  editAudioDestinationInherited: true,
+  newAudioDestinationInherited: true,
 };
 
 function escapeHtml(value = '') {
@@ -317,14 +319,14 @@ function selectSubscription(id) {
   $('#subscription-form').classList.remove('hidden');
   $('#edit-id').value = row.id;
   $('#edit-title').textContent = row.name;
-  $('#edit-mode').textContent = row.mode;
-  if (row.additionalAudio) $('#edit-mode').textContent = 'video + audio';
+  $('#edit-mode').textContent = row.additionalAudio ? 'video + audio' : row.mode;
   $('#edit-mode').className = `mode-pill ${row.mode}`;
   $('#edit-url').value = row.url;
   $('#edit-output').value = row.outputDir;
   $('#edit-audio-copy-section').classList.toggle('hidden', row.mode !== 'video');
   $('#edit-additional-audio').checked = Boolean(row.additionalAudio);
-  $('#edit-audio-output').value = row.audioOutputDir || '/media/music/';
+  $('#edit-audio-output').value = row.audioOutputDir || row.outputDir;
+  appState.editAudioDestinationInherited = !row.audioOutputDir || row.audioOutputDir === row.outputDir;
   $('#edit-audio-output-row').classList.toggle('hidden', !row.additionalAudio);
   $('#edit-audio-output').required = Boolean(row.additionalAudio);
   FormatBuilder.mount($('#edit-format'), row.mode, row.format === 'Preset default' ? '' : row.format, true, appState.settings?.[row.mode]?.format || '');
@@ -760,7 +762,8 @@ $('#add-subscription').addEventListener('click', () => {
     || schedules.find(item => item.id !== 'watch-later')?.id
     || schedules[0].id;
   $('#new-output').value = '/media/videos/';
-  $('#new-audio-output').value = '/media/music/';
+  $('#new-audio-output').value = $('#new-output').value;
+  appState.newAudioDestinationInherited = true;
   $('#new-audio-copy-section').classList.remove('hidden');
   $('#new-audio-output-row').classList.add('hidden');
   $('#new-audio-output').required = false;
@@ -772,6 +775,7 @@ $('#add-subscription').addEventListener('click', () => {
 $$('[data-close-add]').forEach(button => button.addEventListener('click', () => $('#add-dialog').close()));
 $('#new-mode').addEventListener('change', () => {
   $('#new-output').value = $('#new-mode').value === 'audio' ? '/media/music/' : '/media/videos/';
+  if (appState.newAudioDestinationInherited) $('#new-audio-output').value = $('#new-output').value;
   const mode = $('#new-mode').value;
   const video = mode === 'video';
   $('#new-audio-copy-section').classList.toggle('hidden', !video);
@@ -783,13 +787,34 @@ $('#new-mode').addEventListener('change', () => {
 });
 $('#new-additional-audio').addEventListener('change', () => {
   const enabled = $('#new-mode').value === 'video' && $('#new-additional-audio').checked;
+  if (enabled) {
+    $('#new-audio-output').value = $('#new-output').value;
+    appState.newAudioDestinationInherited = true;
+  }
   $('#new-audio-output-row').classList.toggle('hidden', !enabled);
   $('#new-audio-output').required = enabled;
 });
 $('#edit-additional-audio').addEventListener('change', () => {
   const enabled = $('#edit-additional-audio').checked;
+  $('#edit-mode').textContent = enabled ? 'video + audio' : 'video';
+  if (enabled && (appState.editAudioDestinationInherited || !$('#edit-audio-output').value.trim())) {
+    $('#edit-audio-output').value = $('#edit-output').value;
+    appState.editAudioDestinationInherited = true;
+  }
   $('#edit-audio-output-row').classList.toggle('hidden', !enabled);
   $('#edit-audio-output').required = enabled;
+});
+$('#new-output').addEventListener('input', () => {
+  if (appState.newAudioDestinationInherited) $('#new-audio-output').value = $('#new-output').value;
+});
+$('#new-audio-output').addEventListener('input', () => {
+  appState.newAudioDestinationInherited = $('#new-audio-output').value === $('#new-output').value;
+});
+$('#edit-output').addEventListener('input', () => {
+  if (appState.editAudioDestinationInherited) $('#edit-audio-output').value = $('#edit-output').value;
+});
+$('#edit-audio-output').addEventListener('input', () => {
+  appState.editAudioDestinationInherited = $('#edit-audio-output').value === $('#edit-output').value;
 });
 $('#add-form').addEventListener('submit', async event => {
   event.preventDefault();
