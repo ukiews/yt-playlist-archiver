@@ -206,11 +206,12 @@ def set_subscription_paused(subscription_id: str, paused: bool) -> None:
     known = {row["id"] for row in subscription_rows()}
     if subscription_id not in known:
         raise ValueError("Unknown subscription")
+    linked_ids = linked_subscription_ids(subscription_id)
     paused_ids = paused_subscriptions()
     if paused:
-        paused_ids.add(subscription_id)
+        paused_ids.update(linked_ids)
     else:
-        paused_ids.discard(subscription_id)
+        paused_ids.difference_update(linked_ids)
     atomic_write(PAUSED_FILE, "".join(f"{name}\n" for name in sorted(paused_ids)), 0o600)
 
 
@@ -317,6 +318,79 @@ def subscription_rows() -> list[dict]:
                 "manuallyPaused": name in paused_ids,
             })
     return rows
+
+
+def load_dashboard_settings() -> dict:
+    try:
+        settings = json.loads(DASHBOARD_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        settings = {}
+    return settings if isinstance(settings, dict) else {}
+
+
+def save_dashboard_settings(settings: dict) -> None:
+    if DASHBOARD_SETTINGS_FILE.exists():
+        safe_backup(DASHBOARD_SETTINGS_FILE)
+    atomic_write(DASHBOARD_SETTINGS_FILE, json.dumps(settings, indent=2, sort_keys=True) + "\n", 0o600)
+
+
+def linked_audio_outputs() -> dict[str, str]:
+    raw = load_dashboard_settings().get("linkedAudioOutputs") or {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(primary): str(audio)
+        for primary, audio in raw.items()
+        if re.fullmatch(r"[a-z][a-z0-9_]{2,49}", str(primary))
+        and re.fullmatch(r"[a-z][a-z0-9_]{2,49}", str(audio))
+    }
+
+
+def update_linked_audio_outputs(mapping: dict[str, str]) -> None:
+    settings = load_dashboard_settings()
+    if mapping:
+        settings["linkedAudioOutputs"] = dict(sorted(mapping.items()))
+    else:
+        settings.pop("linkedAudioOutputs", None)
+    save_dashboard_settings(settings)
+
+
+def linked_subscription_ids(subscription_id: str) -> list[str]:
+    mapping = linked_audio_outputs()
+    if subscription_id in mapping:
+        return [subscription_id, mapping[subscription_id]]
+    primary = next((key for key, value in mapping.items() if value == subscription_id), None)
+    return [primary, subscription_id] if primary else [subscription_id]
+
+
+def logical_subscription_rows(rows: list[dict] | None = None) -> list[dict]:
+    rows = rows if rows is not None else subscription_rows()
+    by_id = {row["id"]: row for row in rows}
+    mapping = linked_audio_outputs()
+    companion_ids = {audio for primary, audio in mapping.items() if primary in by_id and audio in by_id}
+    logical = []
+    for source in rows:
+        if source["id"] in companion_ids:
+            continue
+        row = copy.deepcopy(source)
+        audio_id = mapping.get(row["id"])
+        audio = by_id.get(audio_id) if audio_id else None
+        row["additionalAudio"] = bool(audio and row["mode"] == "video")
+        row["rawIds"] = [row["id"]]
+        row["modes"] = [row["mode"]]
+        if row["additionalAudio"]:
+            row["videoArchiveCount"] = row["archiveCount"]
+            row["rawIds"].append(audio["id"])
+            row["modes"].append("audio")
+            row["audioSubscriptionId"] = audio["id"]
+            row["audioOutputDir"] = audio["outputDir"]
+            row["audioArchiveCount"] = audio["archiveCount"]
+            row["audioArchiveUpdated"] = audio["archiveUpdated"]
+            row["archiveCount"] = max(row["archiveCount"], audio["archiveCount"])
+            row["manuallyPaused"] = row["manuallyPaused"] or audio["manuallyPaused"]
+            row["paused"] = row["paused"] or audio["paused"]
+        logical.append(row)
+    return logical
 
 
 def archive_entries(rows: list[dict]) -> dict[str, dict]:
@@ -446,17 +520,69 @@ def latest_downloads(rows: list[dict], limit: int = 80) -> list[dict]:
         return downloads[:limit]
 
 
+def grouped_downloads(downloads: list[dict], rows: list[dict], limit: int = 80) -> list[dict]:
+    mapping = linked_audio_outputs()
+    reverse = {audio: primary for primary, audio in mapping.items()}
+    rows_by_id = {row["id"]: row for row in rows}
+    grouped: dict[str, dict] = {}
+    for item in downloads:
+        logical_id = reverse.get(item.get("subscriptionId"), item.get("subscriptionId"))
+        media_key = item.get("videoId") or item.get("title") or item.get("id")
+        key = f"{logical_id}:{media_key}"
+        output = {
+            "id": item.get("id"),
+            "subscriptionId": item.get("subscriptionId"),
+            "mode": item.get("mode"),
+            "extension": Path(item.get("fileName", "")).suffix.lstrip(".").upper(),
+            "fileName": item.get("fileName"),
+            "folder": item.get("folder"),
+            "path": item.get("path"),
+            "size": item.get("size", 0),
+            "downloadedAt": item.get("downloadedAt"),
+        }
+        if key not in grouped:
+            primary = rows_by_id.get(logical_id) or rows_by_id.get(item.get("subscriptionId")) or {}
+            grouped[key] = {
+                **item,
+                "id": key,
+                "subscriptionId": logical_id,
+                "playlist": primary.get("name") or item.get("playlist"),
+                "genre": primary.get("genre") or item.get("genre"),
+                "outputs": [],
+                "modes": [],
+                "size": 0,
+            }
+        entry = grouped[key]
+        entry["outputs"].append(output)
+        if output["mode"] not in entry["modes"]:
+            entry["modes"].append(output["mode"])
+        entry["size"] += output["size"] or 0
+        if item.get("channel") and not entry.get("channel"):
+            entry["channel"] = item["channel"]
+        if (item.get("downloadedAt") or "") > (entry.get("downloadedAt") or ""):
+            entry["downloadedAt"] = item["downloadedAt"]
+    result = list(grouped.values())
+    for item in result:
+        item["outputs"].sort(key=lambda output: (output["mode"] != "video", output["fileName"] or ""))
+        item["mode"] = item["modes"][0] if len(item["modes"]) == 1 else "both"
+        item["fileName"] = " · ".join(output["fileName"] or "" for output in item["outputs"])
+        folders = list(dict.fromkeys(output["folder"] for output in item["outputs"] if output["folder"]))
+        item["folder"] = folders[0] if len(folders) == 1 else "Video and audio destinations"
+    result.sort(key=lambda item: item.get("downloadedAt") or "", reverse=True)
+    return result[:limit]
+
+
 def dashboard_settings() -> dict:
-    try:
-        settings = json.loads(DASHBOARD_SETTINGS_FILE.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        settings = {}
+    settings = load_dashboard_settings()
     timeout = settings.get("missingQueueTimeoutMinutes", DEFAULT_MISSING_QUEUE_TIMEOUT)
     try:
         timeout = int(timeout)
     except (TypeError, ValueError):
         timeout = DEFAULT_MISSING_QUEUE_TIMEOUT
-    return {"missingQueueTimeoutMinutes": min(120, max(5, timeout))}
+    return {
+        "missingQueueTimeoutMinutes": min(120, max(5, timeout)),
+        "linkedAudioOutputs": linked_audio_outputs(),
+    }
 
 
 def subscription_archive_path(row: dict) -> Path:
@@ -1075,7 +1201,8 @@ def progress_payload() -> dict:
 
 
 def state_payload() -> dict:
-    rows = subscription_rows()
+    raw_rows = subscription_rows()
+    rows = logical_subscription_rows(raw_rows)
     missing_queue = missing_queue_state()
     cron_log = read_text(CONFIG_DIR / ".cron.log", 60000)
     manual_log = read_text(MANUAL_LOG, 30000)
@@ -1090,7 +1217,7 @@ def state_payload() -> dict:
         "missingQueue": missing_queue,
         "scheduleActive": (CONFIG_DIR / "cron").exists() and not all_paused() and not missing_queue,
         "logs": {"scheduled": cron_log, "manual": manual_log},
-        "latestDownloads": latest_downloads(rows),
+        "latestDownloads": grouped_downloads(latest_downloads(raw_rows), raw_rows),
         "storage": {
             "videos": disk_state("/media/videos"),
             "music": disk_state("/media/music"),
@@ -1098,7 +1225,7 @@ def state_payload() -> dict:
         "totals": {
             "subscriptions": len(rows),
             "video": sum(1 for row in rows if row["mode"] == "video"),
-            "audio": sum(1 for row in rows if row["mode"] == "audio"),
+            "audio": sum(1 for row in rows if row["mode"] == "audio" or row.get("additionalAudio")),
             "archived": sum(row["archiveCount"] for row in rows),
             "paused": sum(1 for row in rows if row["paused"]),
         },
@@ -1116,6 +1243,24 @@ def settings_payload() -> dict:
     audio_ytdl = audio.get("ytdl_options") or {}
     video_tags = video.get("video_tags") or {}
     music_tags = audio.get("music_tags") or {}
+    logical_rows = {row["id"]: row for row in logical_subscription_rows()}
+    reverse_links = {audio: primary for primary, audio in linked_audio_outputs().items()}
+    schedules = []
+    for schedule in schedule_definitions().values():
+        members = list(dict.fromkeys(reverse_links.get(name, name) for name in schedule["subscriptions"]))
+        labels = list(dict.fromkeys(
+            logical_rows.get(name, {}).get("name") or DISPLAY_NAMES.get(name, name.replace("_", " ").title())
+            for name in members
+        ))
+        if not labels:
+            label = schedule["id"].replace("-", " ").title()
+        elif len(labels) == 1:
+            label = labels[0]
+        elif len(labels) == 2:
+            label = " & ".join(labels)
+        else:
+            label = f"{', '.join(labels[:-1])} & {labels[-1]}"
+        schedules.append({**schedule, "label": label, "subscriptions": members})
     return {
         "workingDirectory": (config.get("configuration") or {}).get("working_directory", "/config/working"),
         **dashboard_settings(),
@@ -1142,7 +1287,7 @@ def settings_payload() -> dict:
             "titleTag": music_tags.get("title", "{title}"),
             "artistTag": music_tags.get("artist", "{uploader}"),
         },
-        "schedules": list(schedule_definitions().values()),
+        "schedules": schedules,
     }
 
 
@@ -1236,8 +1381,29 @@ def apply_subscription_fields(item: dict, mode: str, payload: dict) -> None:
         item[tags_key] = tags
     else:
         item.pop(tags_key, None)
-    if mode == "audio":
+    if mode == "audio" and "embedThumbnail" in payload:
         item["embed_thumbnail"] = bool(payload.get("embedThumbnail"))
+
+
+def companion_audio_id(subscription_id: str) -> str:
+    base = subscription_id[:-6] if subscription_id.endswith("_video") else subscription_id
+    return f"{base[:44]}_audio"
+
+
+def companion_audio_payload(payload: dict) -> dict:
+    result = {
+        "url": payload.get("url"),
+        "outputDir": payload.get("audioOutputDir"),
+        "genre": payload.get("genre"),
+        "format": "",
+        "metadata": copy.deepcopy(payload.get("metadata") or {}),
+    }
+    return result
+
+
+def apply_auth(item: dict, payload: dict) -> None:
+    if bool(payload.get("useAuth")) or re.search(r"[?&]list=WL(?:&|$)", str(item.get("download", ""))):
+        item.setdefault("ytdl_options", {})["cookiefile"] = "/config/youtube_cookies.txt"
 
 
 def patch_subscription(subscription_id: str, payload: dict) -> None:
@@ -1252,12 +1418,42 @@ def patch_subscription(subscription_id: str, payload: dict) -> None:
         raise ValueError("Subscription block was not found")
     apply_subscription_fields(item, mode, payload)
 
+    mapping = linked_audio_outputs()
+    audio_id = mapping.get(subscription_id)
+    wants_audio = mode == "video" and bool(payload.get("additionalAudio"))
+    cron_path = CONFIG_DIR / "cron"
+    cron = read_text(cron_path)
+    group = rows[subscription_id]["scheduleGroup"]
+    if wants_audio:
+        if not str(payload.get("audioOutputDir", "")).strip():
+            raise ValueError("Choose a destination for the separate audio copy")
+        audio_exists = bool(audio_id and audio_id in rows)
+        if not audio_id:
+            audio_id = companion_audio_id(subscription_id)
+            if audio_id in rows:
+                raise ValueError(
+                    f"Subscription ID {audio_id} already exists. Leave this option off until that subscription is migrated."
+                )
+            mapping[subscription_id] = audio_id
+        if not audio_exists:
+            cron = change_cron_member(cron, group, audio_id, True)
+        audio_preset = selected_preset(data, "audio")
+        audio_item = data.setdefault(audio_preset, {}).setdefault(audio_id, {})
+        apply_subscription_fields(audio_item, "audio", companion_audio_payload(payload))
+        apply_auth(audio_item, payload)
+        if (item.get("ytdl_options") or {}).get("cookiefile"):
+            audio_item.setdefault("ytdl_options", {})["cookiefile"] = item["ytdl_options"]["cookiefile"]
+    elif audio_id:
+        audio_row = rows.get(audio_id)
+        if audio_row:
+            audio_preset = selected_preset(data, "audio")
+            data.get(audio_preset, {}).pop(audio_id, None)
+            cron = change_cron_member(cron, audio_row["scheduleGroup"] or group, audio_id, False)
+        mapping.pop(subscription_id, None)
+
     interval = int(payload.get("intervalMinutes", rows[subscription_id]["intervalMinutes"]))
     if interval < 1 or interval > 1440:
         raise ValueError("Interval must be between 1 and 1440 minutes")
-    group = rows[subscription_id]["scheduleGroup"]
-    cron_path = CONFIG_DIR / "cron"
-    cron = read_text(cron_path)
     pattern = rf"(^run_if_due\s+{re.escape(group)}\s+)\d+(\s+)"
     changed, count = re.subn(pattern, rf"\g<1>{interval}\g<2>", cron, count=1, flags=re.MULTILINE)
     if not count:
@@ -1267,9 +1463,12 @@ def patch_subscription(subscription_id: str, payload: dict) -> None:
     validate_file("cron", changed)
     safe_backup(CONFIG_DIR / "subscriptions.yaml")
     atomic_write(CONFIG_DIR / "subscriptions.yaml", updated)
-    if changed != cron:
-        safe_backup(cron_path)
-        atomic_write(cron_path, changed, 0o755)
+    safe_backup(cron_path)
+    atomic_write(cron_path, changed, 0o755)
+    update_linked_audio_outputs(mapping)
+    paused_ids = paused_subscriptions()
+    if audio_id and not wants_audio and audio_id in paused_ids:
+        atomic_write(PAUSED_FILE, "".join(f"{name}\n" for name in sorted(paused_ids - {audio_id})), 0o600)
 
 
 def change_cron_member(cron: str, group: str, subscription_id: str, add: bool) -> str:
@@ -1304,18 +1503,33 @@ def create_subscription(payload: dict) -> str:
         raise ValueError("Choose audio or video")
     if group not in schedule_definitions():
         raise ValueError("Choose an existing schedule group")
-    if subscription_id in {row["id"] for row in subscription_rows()}:
+    existing_ids = {row["id"] for row in subscription_rows()}
+    if subscription_id in existing_ids:
         raise ValueError("Subscription ID already exists")
     data = load_subscriptions()
     preset = selected_preset(data, mode)
     item = {}
     apply_subscription_fields(item, mode, payload)
-    if bool(payload.get("useAuth")) or re.search(r"[?&]list=WL(?:&|$)", item["download"]):
-        item.setdefault("ytdl_options", {})["cookiefile"] = "/config/youtube_cookies.txt"
+    apply_auth(item, payload)
     data.setdefault(preset, {})[subscription_id] = item
+    mapping = linked_audio_outputs()
+    audio_id = None
+    if mode == "video" and bool(payload.get("additionalAudio")):
+        if not str(payload.get("audioOutputDir", "")).strip():
+            raise ValueError("Choose a destination for the separate audio copy")
+        audio_id = companion_audio_id(subscription_id)
+        if audio_id in existing_ids or audio_id == subscription_id:
+            raise ValueError(f"Subscription ID {audio_id} already exists")
+        audio_item = {}
+        apply_subscription_fields(audio_item, "audio", companion_audio_payload(payload))
+        apply_auth(audio_item, payload)
+        data.setdefault(selected_preset(data, "audio"), {})[audio_id] = audio_item
+        mapping[subscription_id] = audio_id
     updated_yaml = dump_yaml(data)
     cron_path = CONFIG_DIR / "cron"
     updated_cron = change_cron_member(read_text(cron_path), group, subscription_id, True)
+    if audio_id:
+        updated_cron = change_cron_member(updated_cron, group, audio_id, True)
     validate_file("subscriptions.yaml", updated_yaml)
     validate_file("cron", updated_cron)
     yaml_path = CONFIG_DIR / "subscriptions.yaml"
@@ -1323,6 +1537,8 @@ def create_subscription(payload: dict) -> str:
     safe_backup(cron_path)
     atomic_write(yaml_path, updated_yaml)
     atomic_write(cron_path, updated_cron, 0o755)
+    if audio_id:
+        update_linked_audio_outputs(mapping)
     return subscription_id
 
 
@@ -1332,11 +1548,22 @@ def remove_subscription(subscription_id: str) -> None:
     if not row:
         raise ValueError("Unknown subscription")
     data = load_subscriptions()
+    mapping = linked_audio_outputs()
+    linked_ids = linked_subscription_ids(subscription_id)
+    primary_id = linked_ids[0]
+    if subscription_id != primary_id:
+        raise ValueError("Remove the combined subscription from its video entry")
     preset = selected_preset(data, row["mode"])
     del data[preset][subscription_id]
+    audio_id = mapping.pop(subscription_id, None)
+    if audio_id:
+        data.get(selected_preset(data, "audio"), {}).pop(audio_id, None)
     updated_yaml = dump_yaml(data)
     cron_path = CONFIG_DIR / "cron"
     updated_cron = change_cron_member(read_text(cron_path), row["scheduleGroup"], subscription_id, False)
+    if audio_id:
+        audio_row = rows.get(audio_id)
+        updated_cron = change_cron_member(updated_cron, (audio_row or row)["scheduleGroup"], audio_id, False)
     validate_file("subscriptions.yaml", updated_yaml)
     validate_file("cron", updated_cron)
     yaml_path = CONFIG_DIR / "subscriptions.yaml"
@@ -1344,8 +1571,11 @@ def remove_subscription(subscription_id: str) -> None:
     safe_backup(cron_path)
     atomic_write(yaml_path, updated_yaml)
     atomic_write(cron_path, updated_cron, 0o755)
-    if subscription_id in paused_subscriptions():
-        atomic_write(PAUSED_FILE, "".join(f"{name}\n" for name in sorted(paused_subscriptions() - {subscription_id})), 0o600)
+    update_linked_audio_outputs(mapping)
+    paused_ids = paused_subscriptions()
+    removed_ids = {subscription_id, *( [audio_id] if audio_id else [] )}
+    if paused_ids & removed_ids:
+        atomic_write(PAUSED_FILE, "".join(f"{name}\n" for name in sorted(paused_ids - removed_ids)), 0o600)
 
 
 def save_schedule_settings(payload: dict) -> None:
@@ -1380,13 +1610,9 @@ def save_schedule_settings(payload: dict) -> None:
     validate_file("cron", updated)
     safe_backup(path)
     atomic_write(path, updated, 0o755)
-    if DASHBOARD_SETTINGS_FILE.exists():
-        safe_backup(DASHBOARD_SETTINGS_FILE)
-    atomic_write(
-        DASHBOARD_SETTINGS_FILE,
-        json.dumps({"missingQueueTimeoutMinutes": timeout}, indent=2) + "\n",
-        0o600,
-    )
+    settings = load_dashboard_settings()
+    settings["missingQueueTimeoutMinutes"] = timeout
+    save_dashboard_settings(settings)
 
 
 def save_config_settings(payload: dict) -> None:
@@ -1753,7 +1979,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 requested = payload.get("subscriptions") or []
                 if not isinstance(requested, list):
                     raise ValueError("subscriptions must be a list")
-                rows = subscription_rows()
+                raw_rows = subscription_rows()
+                rows = logical_subscription_rows(raw_rows)
                 known = {row["id"] for row in rows}
                 paused = {row["id"] for row in rows if row["paused"]}
                 names = [str(name) for name in requested]
@@ -1766,6 +1993,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     raise ValueError(f"Resume paused subscriptions before running them: {', '.join(selected_paused)}")
                 if not names:
                     raise ValueError("All subscriptions are paused")
+                raw_names = []
+                for name in names:
+                    raw_names.extend(linked_subscription_ids(name))
+                names = list(dict.fromkeys(raw_names))
                 dry_run = bool(payload.get("dryRun", False))
                 command = ["ytdl-sub"]
                 if dry_run:

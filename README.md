@@ -93,6 +93,8 @@ Open **Subscriptions → + Add** and enter:
 - A schedule group
 - Optional genre, format, artwork, and metadata settings
 
+For a video subscription, enable **Download a separate audio copy** to save an additional audio file from the same playlist. Choose its `/media/music/` destination; the audio file uses the Global Audio Preset. The dashboard runs and pauses both outputs together and shows them as one subscription. Their download archives remain independent.
+
 The container paths `/media/videos/` and `/media/music/` map to `VIDEO_DIR` and `MUSIC_DIR` from the Compose configuration.
 
 The starter schedule groups check every 2, 10, 30, and 1440 minutes. Change their intervals under **Configuration → Scheduler**. `CRON_SCHEDULE` controls how often the container wakes to evaluate which groups are due.
@@ -131,6 +133,7 @@ Keep `COMPOSE_PROJECT_NAME` unchanged for an existing project. The two core serv
 ## Dashboard features
 
 - Audio and video subscriptions with individual and global pause controls
+- Optional separate audio copies for video subscriptions, managed as one subscription and grouped in Downloads Activity
 - Manual and scheduled runs with live item transfer progress and persistent download history
 - A missing-media review queue that can selectively recover previously downloaded files removed from storage
 - Editable folders, genres, source URLs, formats, tags, naming templates, and intervals

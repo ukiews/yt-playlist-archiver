@@ -49,9 +49,11 @@ function escapeHtml(value = '') {
 const fieldHelp = {
   'new-id': 'Choose a unique internal name, such as choir_audio. This becomes the key in subscriptions.yaml. Use lowercase letters, numbers, and underscores; it cannot be renamed after creation.',
   'new-output': 'Folder inside the container. Start with /media/videos/ or /media/music/ so downloads reach the mounted storage.',
+  'new-audio-output': 'Folder for the additional audio files. Start with /media/music/.',
   'new-schedule': 'Choose when this subscription is checked. You can change each group’s interval under Configuration → Scheduler.',
   'new-use-auth': 'Use the saved YouTube sign-in for private sources such as Watch Later.',
   'edit-output': 'Container path where downloads are stored. Moving it does not move files already downloaded.',
+  'edit-audio-output': 'Container path for the separate audio files. Moving it does not move files already downloaded.',
   'edit-interval': 'Minutes between checks for this schedule group. Changing it also affects other subscriptions in the same group.',
   'setting-working-dir': 'Temporary processing folder inside the container. Keep it on storage with enough space for a full download.',
   'video-sync-source': 'When enabled, files removed from the source playlist may also be removed locally.',
@@ -282,14 +284,14 @@ function renderSubscriptions() {
   const data = appState.data;
   const query = appState.search.toLowerCase();
   const rows = data.subscriptions.filter(row => {
-    const filterMatch = appState.filter === 'all' || row.mode === appState.filter;
+    const filterMatch = appState.filter === 'all' || (row.modes || [row.mode]).includes(appState.filter);
     const queryMatch = !query || `${row.name} ${row.id} ${row.outputDir} ${row.genre || ''}`.toLowerCase().includes(query);
     return filterMatch && queryMatch;
   });
   $('#subscription-list').innerHTML = rows.map(row => `
     <button class="subscription-row ${row.id === appState.selected ? 'selected' : ''} ${row.paused ? 'paused' : ''}" data-id="${escapeHtml(row.id)}" type="button">
       <span class="subscription-main">
-        <span class="mode-icon ${row.mode}">${row.mode === 'video' ? 'MP4' : 'M4A'}</span>
+        <span class="mode-icon ${row.mode}">${row.additionalAudio ? 'A+V' : row.mode === 'video' ? 'MP4' : 'M4A'}</span>
         <span class="subscription-copy"><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.genre || row.outputDir.replace('/media/',''))}</span></span>
       </span>
       <span class="schedule-cell"><strong>${row.paused ? 'Paused' : `${row.intervalMinutes} min`}</strong><span>${row.manuallyPaused ? 'Paused individually' : row.paused ? 'All paused' : friendlyTime(row.nextRun)}</span></span>
@@ -316,9 +318,15 @@ function selectSubscription(id) {
   $('#edit-id').value = row.id;
   $('#edit-title').textContent = row.name;
   $('#edit-mode').textContent = row.mode;
+  if (row.additionalAudio) $('#edit-mode').textContent = 'video + audio';
   $('#edit-mode').className = `mode-pill ${row.mode}`;
   $('#edit-url').value = row.url;
   $('#edit-output').value = row.outputDir;
+  $('#edit-audio-copy-section').classList.toggle('hidden', row.mode !== 'video');
+  $('#edit-additional-audio').checked = Boolean(row.additionalAudio);
+  $('#edit-audio-output').value = row.audioOutputDir || '/media/music/';
+  $('#edit-audio-output-row').classList.toggle('hidden', !row.additionalAudio);
+  $('#edit-audio-output').required = Boolean(row.additionalAudio);
   FormatBuilder.mount($('#edit-format'), row.mode, row.format === 'Preset default' ? '' : row.format, true, appState.settings?.[row.mode]?.format || '');
   addFormatHelp($('#edit-format'));
   $('#edit-interval').value = row.intervalMinutes;
@@ -335,7 +343,9 @@ function selectSubscription(id) {
   $('#run-selected').disabled = Boolean(row.paused || appState.data.job || appState.data.missingQueue);
   const groupMembers = appState.data.subscriptions.filter(item => item.scheduleGroup === row.scheduleGroup).length;
   $('#schedule-note').textContent = groupMembers > 1 ? `This interval is shared by ${groupMembers} subscriptions in the same schedule group.` : 'This subscription has its own schedule group.';
-  $('#edit-archive').textContent = `${row.archiveCount.toLocaleString()} items`;
+  $('#edit-archive').textContent = row.additionalAudio
+    ? `${(row.videoArchiveCount || 0).toLocaleString()} video · ${(row.audioArchiveCount || 0).toLocaleString()} audio items`
+    : `${row.archiveCount.toLocaleString()} items`;
   $('#edit-archive-date').textContent = row.archiveUpdated ? `Updated ${friendlyTime(row.archiveUpdated)}` : 'Archive not found';
   renderSubscriptions();
 }
@@ -351,11 +361,27 @@ function closeInspector() {
 function renderDownloads() {
   const data = appState.data;
   if (!data) return;
-  const subscriptions = new Map(data.subscriptions.map(item => [item.id, item]));
-  const downloads = (data.latestDownloads || []).filter(item => appState.downloadFilter === 'all' || item.mode === appState.downloadFilter);
-  const active = (appState.progress?.activeItems || []).map(item => ({...item, subscriptionRow: subscriptions.get(item.subscription)}))
-    .filter(item => item.subscriptionRow && (appState.downloadFilter === 'all' || item.subscriptionRow.mode === appState.downloadFilter))
-    .filter(item => item.phase !== 'Saving download history' || !downloads.some(saved => saved.subscriptionId === item.subscription
+  const subscriptions = new Map();
+  data.subscriptions.forEach(item => (item.rawIds || [item.id]).forEach(id => subscriptions.set(id, item)));
+  const downloads = (data.latestDownloads || []).filter(item => appState.downloadFilter === 'all' || (item.modes || [item.mode]).includes(appState.downloadFilter));
+  const activeGroups = new Map();
+  (appState.progress?.activeItems || []).forEach(item => {
+    const row = subscriptions.get(item.subscription);
+    if (!row) return;
+    const key = `${row.id}:${item.videoId || item.title}`;
+    const mode = item.subscription === row.audioSubscriptionId || row.mode === 'audio' ? 'audio' : 'video';
+    const grouped = activeGroups.get(key) || {...item, id: key, subscriptionRow: row, modes: []};
+    grouped.title = item.title;
+    grouped.videoId = item.videoId || grouped.videoId;
+    grouped.phase = item.phase;
+    grouped.detail = item.detail;
+    grouped.percent = item.percent;
+    if (!grouped.modes.includes(mode)) grouped.modes.push(mode);
+    activeGroups.set(key, grouped);
+  });
+  const active = [...activeGroups.values()]
+    .filter(item => appState.downloadFilter === 'all' || item.modes.includes(appState.downloadFilter))
+    .filter(item => item.phase !== 'Saving download history' || !downloads.some(saved => saved.subscriptionId === item.subscriptionRow.id
       && ((item.videoId && saved.videoId === item.videoId) || saved.title === item.title)
       && Date.parse(saved.downloadedAt) >= Date.parse(appState.progress.job.startedAt)))
     .reverse();
@@ -371,8 +397,8 @@ function renderDownloads() {
       element.className = 'download-row download-row-live';
       element.dataset.activeId = item.id;
       element.innerHTML = `<span class="download-thumb download-thumb-live"></span>
-        <span class="download-copy"><strong>${escapeHtml(item.title)}</strong><span class="download-live-status"></span><span class="download-tags"><span>${row.mode === 'video' ? 'Video' : 'Audio'}</span>${row.genre ? `<span>${escapeHtml(row.genre)}</span>` : ''}<span class="download-live-badge"></span></span></span>
-        <span class="download-playlist"><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.outputDir.replace('/media/',''))}</span></span>
+        <span class="download-copy"><strong>${escapeHtml(item.title)}</strong><span class="download-live-status"></span><span class="download-tags download-live-tags"></span></span>
+        <span class="download-playlist"><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.additionalAudio ? 'Video + audio' : row.outputDir.replace('/media/',''))}</span></span>
         <div class="download-row-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="${escapeHtml(item.title)} transfer"><span class="download-row-progress-fill"></span></div>`;
       element.querySelector('.download-thumb').textContent = '↓';
     }
@@ -387,9 +413,8 @@ function renderDownloads() {
     const status = `${item.phase}${item.detail ? ` · ${item.detail}` : ''}`;
     const label = transferring ? `${Math.round(item.percent)}%` : item.phase;
     const statusNode = element.querySelector('.download-live-status');
-    const badge = element.querySelector('.download-live-badge');
     if (statusNode.textContent !== status) statusNode.textContent = status;
-    if (badge.textContent !== label) badge.textContent = label;
+    element.querySelector('.download-live-tags').innerHTML = `${item.modes.map(mode => `<span>${mode === 'video' ? 'Video' : 'Audio'}</span>`).join('')}${row.genre ? `<span>${escapeHtml(row.genre)}</span>` : ''}<span>${escapeHtml(label)}</span>`;
     const bar = element.querySelector('.download-row-progress');
     bar.classList.toggle('busy', !transferring);
     if (transferring) {
@@ -409,7 +434,7 @@ function renderDownloads() {
     const recordedRows = downloads.map(item => `
       <a class="download-row" href="${escapeHtml(item.sourceUrl || '#')}" ${item.sourceUrl ? 'target="_blank" rel="noreferrer"' : ''}>
         <span class="download-thumb">${item.thumbnail ? `<img src="${escapeHtml(item.thumbnail)}" alt="" loading="lazy">` : item.mode.toUpperCase()}</span>
-        <span class="download-copy"><strong>${escapeHtml(item.title)}</strong><span title="${escapeHtml(item.fileName)}">${escapeHtml(item.channel || item.fileName)}</span><span class="download-tags"><span>${item.mode === 'video' ? 'MP4 video' : 'M4A audio'}</span>${item.genre ? `<span>${escapeHtml(item.genre)}</span>` : ''}</span></span>
+        <span class="download-copy"><strong>${escapeHtml(item.title)}</strong><span title="${escapeHtml(item.fileName)}">${escapeHtml(item.channel || item.fileName)}</span><span class="download-tags">${(item.outputs || []).map(output => `<span>${escapeHtml(output.extension || output.mode.toUpperCase())} ${output.mode}</span>`).join('')}${item.genre ? `<span>${escapeHtml(item.genre)}</span>` : ''}</span></span>
         <span class="download-playlist"><strong>${escapeHtml(item.playlist)}</strong><span>${escapeHtml(item.folder.replace('/media/',''))}</span></span>
         <span class="download-meta"><strong>${bytes(item.size)}</strong><span>${friendlyTime(item.downloadedAt)}</span></span>
       </a>`);
@@ -735,6 +760,10 @@ $('#add-subscription').addEventListener('click', () => {
     || schedules.find(item => item.id !== 'watch-later')?.id
     || schedules[0].id;
   $('#new-output').value = '/media/videos/';
+  $('#new-audio-output').value = '/media/music/';
+  $('#new-audio-copy-section').classList.remove('hidden');
+  $('#new-audio-output-row').classList.add('hidden');
+  $('#new-audio-output').required = false;
   FormatBuilder.mount($('#new-format'), 'video', '', true, appState.settings?.video?.format || '');
   addFormatHelp($('#new-format'));
   $('#add-dialog').showModal();
@@ -744,8 +773,23 @@ $$('[data-close-add]').forEach(button => button.addEventListener('click', () => 
 $('#new-mode').addEventListener('change', () => {
   $('#new-output').value = $('#new-mode').value === 'audio' ? '/media/music/' : '/media/videos/';
   const mode = $('#new-mode').value;
+  const video = mode === 'video';
+  $('#new-audio-copy-section').classList.toggle('hidden', !video);
+  if (!video) $('#new-additional-audio').checked = false;
+  $('#new-audio-output-row').classList.toggle('hidden', !video || !$('#new-additional-audio').checked);
+  $('#new-audio-output').required = video && $('#new-additional-audio').checked;
   FormatBuilder.mount($('#new-format'), mode, '', true, appState.settings?.[mode]?.format || '');
   addFormatHelp($('#new-format'));
+});
+$('#new-additional-audio').addEventListener('change', () => {
+  const enabled = $('#new-mode').value === 'video' && $('#new-additional-audio').checked;
+  $('#new-audio-output-row').classList.toggle('hidden', !enabled);
+  $('#new-audio-output').required = enabled;
+});
+$('#edit-additional-audio').addEventListener('change', () => {
+  const enabled = $('#edit-additional-audio').checked;
+  $('#edit-audio-output-row').classList.toggle('hidden', !enabled);
+  $('#edit-audio-output').required = enabled;
 });
 $('#add-form').addEventListener('submit', async event => {
   event.preventDefault();
@@ -754,6 +798,8 @@ $('#add-form').addEventListener('submit', async event => {
     url: $('#new-url').value.trim(), outputDir: $('#new-output').value.trim(),
     scheduleGroup: $('#new-schedule').value, genre: $('#new-genre').value.trim(),
     format: FormatBuilder.value($('#new-format')), useAuth: $('#new-use-auth').checked,
+    additionalAudio: $('#new-mode').value === 'video' && $('#new-additional-audio').checked,
+    audioOutputDir: $('#new-audio-output').value.trim(),
     embedThumbnail: $('#new-embed-thumbnail').checked,
     metadata: {
       title: $('#new-tag-title').value.trim(), artist: $('#new-tag-artist').value.trim(),
@@ -855,6 +901,8 @@ $('#subscription-form').addEventListener('submit', async event => {
     intervalMinutes: Number($('#edit-interval').value),
     genre: $('#edit-genre').value,
     format: FormatBuilder.value($('#edit-format')),
+    additionalAudio: $('#edit-additional-audio').checked,
+    audioOutputDir: $('#edit-audio-output').value.trim(),
     metadata: {
       title: $('#edit-tag-title').value,
       artist: $('#edit-tag-artist').value,

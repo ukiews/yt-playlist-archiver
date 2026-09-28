@@ -86,6 +86,11 @@
               <input id="edit-id" type="hidden">
               <label>Source URL<input id="edit-url" type="url" required></label>
               <label>Destination<input id="edit-output" type="text" required></label>
+              <section id="edit-audio-copy-section" class="additional-audio-fields">
+                <label class="checkbox-line"><input id="edit-additional-audio" type="checkbox"> Download a separate audio copy</label>
+                <p class="field-note">Saves an additional audio file using the Global Audio Preset.</p>
+                <label id="edit-audio-output-row" class="hidden">Audio destination<input id="edit-audio-output" type="text" placeholder="/media/music/My Playlist"></label>
+              </section>
               <div id="edit-format" class="format-builder"></div>
               <label>Schedule interval<input id="edit-interval" type="number" min="1" max="1440" required><span class="input-suffix">min</span></label>
               <p id="schedule-note" class="field-note"></p>
@@ -238,6 +243,11 @@
       <div class="form-row"><label>Subscription ID<input id="new-id" type="text" pattern="[a-z][a-z0-9_]{2,49}" placeholder="my_playlist_audio" required></label><label>Type<select id="new-mode"><option value="video">Video</option><option value="audio">Audio</option></select></label></div>
       <label>YouTube URL<input id="new-url" type="url" placeholder="https://www.youtube.com/playlist?list=…" required></label>
       <label>Destination folder<input id="new-output" type="text" placeholder="/media/music/My Playlist" required></label>
+      <section id="new-audio-copy-section" class="additional-audio-fields">
+        <label class="checkbox-line"><input id="new-additional-audio" type="checkbox"> Download a separate audio copy</label>
+        <p class="field-note">Saves an additional audio file using the Global Audio Preset.</p>
+        <label id="new-audio-output-row" class="hidden">Audio destination<input id="new-audio-output" type="text" placeholder="/media/music/My Playlist"></label>
+      </section>
       <label>Schedule group<select id="new-schedule" required></select></label>
       <label class="checkbox-line"><input id="new-use-auth" type="checkbox"> Use current YouTube sign-in for a private playlist</label>
       <details class="cookie-fallback"><summary>Media metadata and format</summary>

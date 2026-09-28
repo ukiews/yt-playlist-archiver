@@ -130,6 +130,9 @@ main { min-height: 0; overflow: hidden; }
 .backup-note { color: var(--muted); font-size: 10px; }
 .field-note { margin: -8px 0 14px; color: var(--muted); font-size: 10px; }
 .metadata-fields { margin: 3px 0 17px; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: white; }
+.additional-audio-fields { margin: 3px 0 17px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 7px; background: white; }
+.additional-audio-fields .field-note { margin: 5px 0 10px 24px; }
+.additional-audio-fields > label:last-child { margin-bottom: 0; }
 .metadata-fields h3 { margin: 0 0 12px; font-size: 12px; }
 .inspector .checkbox-line { display: flex; align-items: center; gap: 7px; margin: 2px 0 0; color: var(--text); }
 .inspector .checkbox-line input { width: auto; height: auto; margin: 0; padding: 0; box-shadow: none; }
@@ -355,6 +358,7 @@ html[data-theme="dark"] .editor-panel,
 html[data-theme="dark"] .technical-panel,
 html[data-theme="dark"] .settings-card,
 html[data-theme="dark"] .metadata-fields,
+html[data-theme="dark"] .additional-audio-fields,
 html[data-theme="dark"] .detail-block,
 html[data-theme="dark"] .advanced-editor-layout,
 html[data-theme="dark"] .auth-dialog,
