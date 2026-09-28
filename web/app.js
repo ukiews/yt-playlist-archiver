@@ -459,13 +459,15 @@ function renderActivity() {
   const queueId = reviewing ? data.missingQueue.id : '';
   if (reviewing && downloadsPanel.dataset.missingQueueId !== queueId) {
     downloadsPanel.dataset.missingQueueId = queueId;
-    downloadsPanel.open = false;
+    downloadsPanel.classList.add('collapsed');
   } else if (!reviewing && downloadsPanel.dataset.missingQueueId) {
     delete downloadsPanel.dataset.missingQueueId;
-    downloadsPanel.open = true;
+    downloadsPanel.classList.remove('collapsed');
   }
   downloadsPanel.classList.toggle('missing-review-active', reviewing);
-  $('#downloads-toggle-label').textContent = downloadsPanel.open ? 'Hide downloads' : 'Show downloads';
+  const downloadsCollapsed = downloadsPanel.classList.contains('collapsed');
+  $('#downloads-toggle-label').textContent = downloadsCollapsed ? 'Show downloads' : 'Hide downloads';
+  $('#downloads-toggle-label').setAttribute('aria-expanded', String(!downloadsCollapsed));
   $('#scheduler-status').textContent = data.missingQueue
     ? (data.missingQueue.status === 'downloading' ? 'Recovery download' : 'Paused for review')
     : data.job ? data.job.label : (data.allPaused ? 'Paused' : data.scheduleActive ? 'Watching' : 'Unavailable');
@@ -984,8 +986,20 @@ $$('[data-download-filter]').forEach(button => button.addEventListener('click', 
   $$('[data-download-filter]').forEach(item => item.classList.toggle('active', item === button));
   renderActivity();
 }));
-$('#downloads-panel').addEventListener('toggle', () => {
-  $('#downloads-toggle-label').textContent = $('#downloads-panel').open ? 'Hide downloads' : 'Show downloads';
+function toggleDownloadsPanel() {
+  const panel = $('#downloads-panel');
+  if (!panel.classList.contains('missing-review-active')) return;
+  panel.classList.toggle('collapsed');
+  const collapsed = panel.classList.contains('collapsed');
+  $('#downloads-toggle-label').textContent = collapsed ? 'Show downloads' : 'Hide downloads';
+  $('#downloads-toggle-label').setAttribute('aria-expanded', String(!collapsed));
+}
+$('#downloads-toggle-label').addEventListener('click', event => {
+  event.stopPropagation();
+  toggleDownloadsPanel();
+});
+$('#downloads-panel .panel-header').addEventListener('click', event => {
+  if (!event.target.closest('button')) toggleDownloadsPanel();
 });
 $$('[data-settings-page]').forEach(button => button.addEventListener('click', () => setSettingsPage(button.dataset.settingsPage)));
 $('#preset-form').addEventListener('submit', async event => {
