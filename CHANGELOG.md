@@ -2,16 +2,13 @@
 
 The version shown in the dashboard comes from `web/VERSION`. Each release updates that file, adds a section here, and receives a matching `vX.Y.Z` Git tag. Versioned container images use the same tag.
 
-## 1.2.0 — 2026-09-28
-
-- Save a separate audio copy from a video subscription using the Global Audio Preset, with one schedule, pause control, and subscription entry for both outputs.
-- Group linked video and audio files into one Downloads Activity entry with the actual file formats shown as tags.
-- Keep video and audio download archives independent so each output remains protected from duplicate downloads.
-
 ## 1.1.0 — 2026-09-28
 
 - Find previously downloaded media that is missing from storage, review it with thumbnails and subscription details, and download only the checked items with their original subscription settings.
 - Pause automatic checks during missing-media review and recovery, with a configurable 15-minute review timeout and safe recovery after cancellation, expiration, or restart.
+- Save a separate audio copy from a video subscription using the Global Audio Preset, with one schedule, pause control, and subscription entry for both outputs.
+- Group linked video and audio files into one Downloads Activity entry with the actual file formats shown as tags.
+- Keep video and audio download archives independent so each output remains protected from duplicate downloads.
 
 ## 1.0.1 — 2026-09-27
 
