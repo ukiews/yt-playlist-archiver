@@ -56,6 +56,7 @@ DEFAULT_FILES = {
     "subscriptions.yaml": 0o600,
     "cron": 0o755,
     "youtube-auth-check.sh": 0o755,
+    "log-with-timestamps.py": 0o755,
 }
 VIDEO_PRESETS = ("yt_downloader_video", LEGACY_PREFIX + "_video")
 AUDIO_PRESETS = ("yt_downloader_audio", LEGACY_PREFIX + "_audio")
@@ -115,6 +116,28 @@ def enable_download_progress_logs() -> bool:
     if old not in original:
         return False
     updated = original.replace(old, old.replace("--log-level info", "--log-level verbose"))
+    validate_file("cron", updated)
+    safe_backup(path)
+    atomic_write(path, updated, 0o755)
+    return True
+
+
+def enable_scheduled_log_timestamps() -> bool:
+    """Timestamp output in the dashboard's standard scheduler without rewriting custom scripts."""
+    path = CONFIG_DIR / "cron"
+    original = read_text(path)
+    command = 'if ytdl-sub sub --suppress-colors --log-level verbose --match "${active_subscriptions[@]}"; then'
+    if command not in original or "/config/log-with-timestamps.py" in original:
+        return False
+    updated = original.replace("set -u\n", "set -u\nset -o pipefail\n", 1)
+    updated = updated.replace(
+        "if ! /config/youtube-auth-check.sh; then",
+        "if ! /config/youtube-auth-check.sh 2>&1 | /config/log-with-timestamps.py; then",
+    )
+    updated = updated.replace(
+        command,
+        command.replace("; then", " 2>&1 | /config/log-with-timestamps.py; then"),
+    )
     validate_file("cron", updated)
     safe_backup(path)
     atomic_write(path, updated, 0o755)
@@ -1012,7 +1035,7 @@ def install_youtube_cookies(content: str) -> dict:
         with MANUAL_LOG.open("a", encoding="utf-8") as handle:
             stamp = iso_time(time.time())
             handle.write(f"\n[{stamp}] Import and verify YouTube sign-in\n")
-            handle.write((result.stdout or result.stderr or "No validation output")[-4000:] + "\n")
+            write_timestamped_lines(handle, (result.stdout or result.stderr or "No validation output")[-4000:])
         if result.returncode:
             if previous is None:
                 cookie_file.unlink(missing_ok=True)
@@ -1715,6 +1738,7 @@ def save_config_settings(payload: dict) -> None:
 
 def finish_job(process: subprocess.Popen, log_handle, job_id: str, on_finish=None) -> None:
     global CURRENT_JOB
+    stream_timestamped_output(process, log_handle)
     code = process.wait()
     finished = iso_time(time.time())
     finish_error = None
@@ -1742,6 +1766,32 @@ def finish_job(process: subprocess.Popen, log_handle, job_id: str, on_finish=Non
         print(f"Dashboard job finalization failed: {finish_error}", flush=True)
 
 
+def write_timestamped_lines(log_handle, content: str) -> None:
+    for line in re.split(r"[\r\n]+", content):
+        if line:
+            log_handle.write(f"[{iso_time(time.time())}] {line}\n")
+    log_handle.flush()
+
+
+def stream_timestamped_output(process: subprocess.Popen, log_handle) -> None:
+    """Copy process output in real time, treating terminal progress returns as lines."""
+    if process.stdout is None:
+        return
+    pending = []
+    while True:
+        character = process.stdout.read(1)
+        if not character:
+            break
+        if character in "\r\n":
+            if pending:
+                write_timestamped_lines(log_handle, "".join(pending))
+                pending.clear()
+        else:
+            pending.append(character)
+    if pending:
+        write_timestamped_lines(log_handle, "".join(pending))
+
+
 def start_job(kind: str, label: str, command: list[str], *, reuse_lock: bool = False, on_finish=None) -> dict:
     global CURRENT_JOB
     with JOB_LOCK:
@@ -1761,15 +1811,16 @@ def start_job(kind: str, label: str, command: list[str], *, reuse_lock: bool = F
             "running": True,
         }
     log_handle = MANUAL_LOG.open("a", encoding="utf-8")
-    log_handle.write(f"\n[{CURRENT_JOB['startedAt']}] {label}\n$ {' '.join(command)}\n")
+    log_handle.write(f"\n[{CURRENT_JOB['startedAt']}] {label}\n[{CURRENT_JOB['startedAt']}] $ {' '.join(command)}\n")
     log_handle.flush()
     try:
         process = subprocess.Popen(
             command,
             cwd=CONFIG_DIR,
-            stdout=log_handle,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            bufsize=1,
             env={**os.environ, "NO_COLOR": "1"},
         )
     except Exception:
@@ -2133,6 +2184,8 @@ if __name__ == "__main__":
         print(f"Created starter configuration: {', '.join(initialized)}", flush=True)
     if enable_download_progress_logs():
         print("Enabled transfer progress in the existing scheduler", flush=True)
+    if enable_scheduled_log_timestamps():
+        print("Enabled timestamps in the existing scheduler", flush=True)
 
     def watch_archives() -> None:
         while True:

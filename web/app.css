@@ -165,8 +165,11 @@ main { min-height: 0; overflow: hidden; }
 .missing-queue-empty { padding: 24px; text-align: center; color: var(--muted); }
 .downloads-panel, .editor-panel { min-height: 310px; display: grid; grid-template-rows: 55px minmax(0,1fr); border: 1px solid var(--line); border-radius: 9px; background: white; overflow: hidden; }
 .downloads-panel { flex: 1 0 310px; }
+.downloads-panel[open] { display: flex; flex-direction: column; }
+.downloads-panel[open] > .panel-header { flex: 0 0 55px; }
+.downloads-panel[open] > .downloads-list { flex: 1 1 auto; height: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
 .downloads-panel:not([open]) { min-height: 0; flex: 0 0 auto; display: block; }
-.downloads-panel:not([open]) .panel-header { border-bottom: 0; }
+.downloads-panel:not([open]) .panel-header { min-height: 51px; border-bottom: 0; }
 .downloads-panel summary { cursor: pointer; list-style: none; }
 .downloads-panel summary::-webkit-details-marker { display: none; }
 .downloads-panel[open] summary { border-bottom: 1px solid var(--line); }

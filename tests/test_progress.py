@@ -1,4 +1,5 @@
 import datetime as dt
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -116,6 +117,31 @@ class ProgressLogTests(unittest.TestCase):
         self.assertIn("--log-level verbose", cron.read_text())
         self.assertFalse(server.enable_download_progress_logs())
         self.assertEqual(len(list((self.config / ".dashboard-backups").iterdir())), 1)
+
+    def test_standard_scheduler_gets_timestamped_output_once(self):
+        cron = self.config / "cron"
+        cron.write_text(
+            '#!/bin/bash\nset -u\n'
+            'if ! /config/youtube-auth-check.sh; then\n  :\nfi\n'
+            'if ytdl-sub sub --suppress-colors --log-level verbose --match "${active_subscriptions[@]}"; then\n  :\nfi\n'
+        )
+        self.assertTrue(server.enable_scheduled_log_timestamps())
+        content = cron.read_text()
+        self.assertIn("set -o pipefail", content)
+        self.assertIn("youtube-auth-check.sh 2>&1 | /config/log-with-timestamps.py", content)
+        self.assertIn('"${active_subscriptions[@]}" 2>&1 | /config/log-with-timestamps.py', content)
+        self.assertFalse(server.enable_scheduled_log_timestamps())
+
+    def test_streamed_manual_output_timestamps_newlines_and_progress_returns(self):
+        process = type("Process", (), {"stdout": io.StringIO("first line\rsecond line\n")})()
+        output = io.StringIO()
+        with patch.object(server, "iso_time", return_value="2026-09-28T11:30:00-04:00"):
+            server.stream_timestamped_output(process, output)
+        self.assertEqual(
+            output.getvalue(),
+            "[2026-09-28T11:30:00-04:00] first line\n"
+            "[2026-09-28T11:30:00-04:00] second line\n",
+        )
 
 
 if __name__ == "__main__":
