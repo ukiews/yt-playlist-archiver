@@ -450,7 +450,18 @@ function renderDownloads() {
 
 function renderActivity() {
   const data = appState.data;
-  $('#downloads-panel').classList.toggle('missing-review-active', data.missingQueue?.status === 'reviewing');
+  const downloadsPanel = $('#downloads-panel');
+  const reviewing = data.missingQueue?.status === 'reviewing';
+  const queueId = reviewing ? data.missingQueue.id : '';
+  if (reviewing && downloadsPanel.dataset.missingQueueId !== queueId) {
+    downloadsPanel.dataset.missingQueueId = queueId;
+    downloadsPanel.open = false;
+  } else if (!reviewing && downloadsPanel.dataset.missingQueueId) {
+    delete downloadsPanel.dataset.missingQueueId;
+    downloadsPanel.open = true;
+  }
+  downloadsPanel.classList.toggle('missing-review-active', reviewing);
+  $('#downloads-toggle-label').textContent = downloadsPanel.open ? 'Hide downloads' : 'Show downloads';
   $('#scheduler-status').textContent = data.missingQueue
     ? (data.missingQueue.status === 'downloading' ? 'Recovery download' : 'Paused for review')
     : data.job ? data.job.label : (data.allPaused ? 'Paused' : data.scheduleActive ? 'Watching' : 'Unavailable');
@@ -962,11 +973,16 @@ $$('[data-log]').forEach(button => button.addEventListener('click', () => {
   $$('[data-log]').forEach(item => item.classList.toggle('active', item === button));
   renderActivity();
 }));
-$$('[data-download-filter]').forEach(button => button.addEventListener('click', () => {
+$$('[data-download-filter]').forEach(button => button.addEventListener('click', event => {
+  event.preventDefault();
+  event.stopPropagation();
   appState.downloadFilter = button.dataset.downloadFilter;
   $$('[data-download-filter]').forEach(item => item.classList.toggle('active', item === button));
   renderActivity();
 }));
+$('#downloads-panel').addEventListener('toggle', () => {
+  $('#downloads-toggle-label').textContent = $('#downloads-panel').open ? 'Hide downloads' : 'Show downloads';
+});
 $$('[data-settings-page]').forEach(button => button.addEventListener('click', () => setSettingsPage(button.dataset.settingsPage)));
 $('#preset-form').addEventListener('submit', async event => {
   event.preventDefault();

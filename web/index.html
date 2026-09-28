@@ -130,15 +130,15 @@
             </div>
             <div id="missing-queue-list" class="missing-queue-list"></div>
           </section>
-          <section id="downloads-panel" class="downloads-panel">
-            <div class="panel-header">
+          <details id="downloads-panel" class="downloads-panel" open>
+            <summary class="panel-header">
               <div><h2>Downloads Activity</h2><span id="downloads-summary">Loading media history…</span></div>
-              <div class="segmented"><button class="active" data-download-filter="all">All</button><button data-download-filter="video">Video</button><button data-download-filter="audio">Audio</button></div>
-            </div>
+              <div class="downloads-panel-actions"><div class="segmented"><button class="active" data-download-filter="all">All</button><button data-download-filter="video">Video</button><button data-download-filter="audio">Audio</button></div><span id="downloads-toggle-label" class="downloads-toggle-label">Hide downloads</span></div>
+            </summary>
             <div id="downloads-list" class="downloads-list"><div id="live-downloads"></div><div id="recorded-downloads"></div></div>
-          </section>
+          </details>
           <details class="technical-panel">
-            <summary><span><strong>Technical activity log</strong><small id="log-updated">Waiting for data</small></span><span>Show log</span></summary>
+            <summary><span><strong>Activity log</strong><small id="log-updated">Waiting for data</small></span><span>Show log</span></summary>
             <div class="technical-toolbar"><div class="segmented"><button class="active" data-log="scheduled">Scheduled</button><button data-log="manual">Manual</button></div></div>
             <pre id="activity-log" tabindex="0"></pre>
           </details>
