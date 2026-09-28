@@ -74,6 +74,7 @@ const FormatBuilder = (() => {
       custom.classList.toggle('hidden', !showCustom);
       guided.classList.toggle('format-default-fields', usesDefaults);
       custom.classList.toggle('format-default-fields', usesDefaults);
+      host.querySelector('.format-preview').classList.toggle('format-default-fields', usesDefaults);
       guided.querySelectorAll('select,input').forEach(field => { field.disabled = usesDefaults; });
       host.querySelector('[data-format-raw]').disabled = usesDefaults;
       host.querySelector('.format-preview').classList.toggle('hidden', false);
